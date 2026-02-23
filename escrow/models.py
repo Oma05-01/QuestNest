@@ -1,0 +1,127 @@
+# escrow/models.py
+from django.db import models
+from accounts.models import User
+from properties.models import Property
+from wallet.models import Wallet
+from django.utils import timezone
+from wallet.models import WalletTransaction
+import uuid
+
+from operations.services.event_service import log_event
+from operations.constants import EventType
+from operations.rules import execute_rules
+from operations.lifecycle import LifecycleMixin
+
+class Escrow(LifecycleMixin, models.Model):
+
+    PENDING = 'pending'
+    FUNDED = 'funded'
+    RELEASED = 'released'
+    REFUNDED = 'refunded'
+
+    STATUS_CHOICES = [
+        (PENDING, 'Pending'),
+        (FUNDED, 'Funded'),
+        (RELEASED, 'Released'),
+        (REFUNDED, 'Refunded'),
+    ]
+
+    ALLOWED_TRANSITIONS = {
+        PENDING: [FUNDED],
+        FUNDED: [RELEASED, REFUNDED],
+        RELEASED: [],
+        REFUNDED: [],
+    }
+
+    tenant = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='tenant_escrows'
+    )
+    landlord = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='landlord_escrows'
+    )
+    property = models.ForeignKey(
+        Property,
+        on_delete=models.CASCADE,
+        related_name='escrows'
+    )
+
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default=PENDING
+    )
+
+    # New fields for rent period tracking
+    start_date = models.DateField(default=timezone.now)
+    end_date = models.DateField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    released_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Escrow {self.id} - {self.property.name}"
+
+    def fund(self, *, actor=None):
+
+        tenant_wallet = self.tenant.wallet
+
+        if tenant_wallet.balance < self.amount:
+            raise ValueError("Insufficient wallet balance.")
+
+        WalletTransaction.objects.create(
+            wallet=tenant_wallet,
+            amount=self.amount,
+            transaction_type='debit',
+            reference=f"ESCROW-FUND-{uuid.uuid4()}",
+            description=f"Escrow funding for {self.property.name}"
+        )
+
+        self.transition_to(
+            self.FUNDED,
+            actor=actor,
+            event_type=EventType.ESCROW_FUNDED
+        )
+
+    def release(self, *, actor=None):
+
+        landlord_wallet = self.landlord.wallet
+
+        WalletTransaction.objects.create(
+            wallet=landlord_wallet,
+            amount=self.amount,
+            transaction_type='credit',
+            reference=f"ESCROW-RELEASE-{uuid.uuid4()}",
+            description=f"Escrow release for {self.property.name}"
+        )
+
+        self.transition_to(
+            self.RELEASED,
+            actor=actor,
+            event_type=EventType.ESCROW_RELEASED
+        )
+
+    def refund(self, *, actor=None):
+        tenant_wallet = self.tenant.wallet
+
+        WalletTransaction.objects.create(
+            wallet=tenant_wallet,
+            amount=self.amount,
+            transaction_type='credit',
+            reference=f"ESCROW-REFUND-{uuid.uuid4()}",
+            description=f"Escrow refund for {self.property.name}"
+        )
+
+        self.transition_to(
+            self.REFUNDED,
+            actor=actor,
+            event_type=EventType.ESCROW_REFUNDED
+        )
+

@@ -1,0 +1,12 @@
+<h2>Select Organisation</h2>
+
+<ul>
+    {% for membership in memberships %}
+        <li>
+            {{ membership.organisation.name }}
+            <a href="{% url 'set_active_org' membership.organisation.id %}">
+                Enter
+            </a>
+        </li>
+    {% endfor %}
+</ul>
