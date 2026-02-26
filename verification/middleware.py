@@ -19,12 +19,12 @@ class VerifiedEntityMiddleware:
             if not getattr(request.organisation, "is_verified", False):
                 return HttpResponseForbidden("Your organisation is not verified yet.")
 
-        prop_id = request.GET.get('property_id') or request.POST.get('property_id')
+        prop_id = request.GET.get('unit_id') or request.POST.get('unit_id')
         if prop_id:
-            from properties.models import Property
-            property_obj = Property.objects.filter(id=prop_id).first()
-            if property_obj and not property_obj.is_verified:
-                return HttpResponseForbidden("Property is not verified.")
+            from assets.models import Unit
+            unit_obj = Unit.objects.filter(id=prop_id).first()
+            if unit_obj and not unit_obj.is_verified:
+                return HttpResponseForbidden("Unit is not verified.")
 
         response = self.get_response(request)
         return response

@@ -1,6 +1,6 @@
 from django.db import models
 from organisations.models import Organisation
-from properties.models import Property
+from assets.models import Assets
 from accounts.models import User
 
 class VerificationDocument(models.Model):
@@ -17,7 +17,7 @@ class OrganisationVerification(models.Model):
     reviewed_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
 
 class PropertyVerification(models.Model):
-    property = models.OneToOneField(Property, on_delete=models.CASCADE)
+    asset = models.OneToOneField(Assets, on_delete=models.CASCADE, null=True, blank=True)
     verified = models.BooleanField(default=False)
     verified_at = models.DateTimeField(null=True, blank=True)
     documents = models.ManyToManyField(VerificationDocument, blank=True)

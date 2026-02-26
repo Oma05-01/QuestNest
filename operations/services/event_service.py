@@ -1,7 +1,5 @@
-from operations.models import Event, EventRule
-from operations.services.task_service import create_task
-from django.db.models import Q
-from operations.constants import EventType
+from operations.models import Event
+from operations.tasks import process_event_rules_task
 
 def log_event(
     *,
@@ -14,9 +12,9 @@ def log_event(
     parent_event=None,
 ):
     """
-    Logs an event and executes any rules associated with it.
+    Logs an event and passes it to the background worker to evaluate rules.
     """
-    # 1️⃣ Create the event
+    # 1️⃣ Create the event (Fast)
     event = Event.objects.create(
         organisation=organisation,
         actor=actor,
@@ -27,36 +25,8 @@ def log_event(
         parent_event=parent_event
     )
 
-    # 2️⃣ Fetch active rules (global + org-specific)
-    rules = EventRule.objects.filter(
-        event_type=event_type,
-        is_active=True
-    ).filter(
-        Q(organisation=organisation) | Q(organisation__isnull=True)
-    ).order_by("execution_order")
-
-    # 3️⃣ Execute rules
-    for rule in rules:
-        if rule.action_type == "CREATE_TASK":
-            task = create_task(
-                organisation=organisation,
-                title=rule.task_title,
-                description=rule.task_description,
-                related_object_type=object_type,
-                related_object_id=object_id
-            )
-
-            # Log child event
-            log_event(
-                organisation=organisation,
-                actor=None,  # system-triggered
-                event_type=EventType.TASK_CREATED,
-                object_type="Task",
-                object_id=str(task.id),
-                metadata={
-                    "triggered_by_event": event.event_type
-                },
-                parent_event=event
-            )
+    # 2️⃣ Hand off to Celery / Memurai (Instant)
+    # Do NOT execute rules here!
+    process_event_rules_task.delay(event.id)
 
     return event

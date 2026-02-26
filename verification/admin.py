@@ -8,6 +8,6 @@ class OrganisationVerificationAdmin(admin.ModelAdmin):
 
 @admin.register(PropertyVerification)
 class PropertyVerificationAdmin(admin.ModelAdmin):
-    list_display = ("property", "verified", "verified_at", "reviewed_by")
+    list_display = ("asset", "verified", "verified_at", "reviewed_by")
     list_filter = ("verified",)
     filter_horizontal = ("documents",)

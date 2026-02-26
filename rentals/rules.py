@@ -1,7 +1,7 @@
 from operations.rules import register_rule
 from operations.constants import EventType
 from rentals.models import Tenancy
-from properties.models import Property
+from assets.models import Assets, Unit
 
 @register_rule(trigger_event=EventType.ESCROW_RELEASED)
 def activate_tenancy_on_escrow_release(event):
@@ -12,12 +12,12 @@ def activate_tenancy_on_escrow_release(event):
     escrow = event.object  # Escrow instance
 
     # Ensure we have property and tenant
-    if not escrow.property or not escrow.tenant:
+    if not escrow.unit or not escrow.tenant:
         return
 
     # Check if tenancy already exists for this property & tenant
     tenancy, created = Tenancy.objects.get_or_create(
-        property=escrow.property,
+        unit=escrow.unit,
         tenant=escrow.tenant,
         organisation=escrow.property.organisation,
         defaults={
@@ -32,18 +32,18 @@ def activate_tenancy_on_escrow_release(event):
         tenancy.activate(actor=escrow.landlord)
 
 @register_rule(trigger_event=EventType.TENANCY_ACTIVATED)
-def mark_property_occupied(event):
+def mark_unit_occupied(event):
     """
     When a tenancy is activated, mark the linked property as OCCUPIED.
     """
     tenancy = event.object  # Tenancy instance
 
-    property_obj = tenancy.property
-    if property_obj.status != Property.OCCUPIED:
+    unit_obj = tenancy.unit
+    if unit_obj.status != Unit.OCCUPIED:
         # Use your LifecycleMixin transition method if you have it
-        property_obj.transition_to(
-            Property.OCCUPIED,
+        unit_obj.transition_to(
+            Unit.OCCUPIED,
             actor=tenancy.tenant,  # or tenancy.organisation.owner
             event_type=EventType.PROPERTY_STATUS_CHANGED,
-            metadata={"to": Property.OCCUPIED}
+            metadata={"to": Unit.OCCUPIED}
         )

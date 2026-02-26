@@ -1,24 +1,12 @@
 from operations.services.event_service import log_event
-from operations.rules import execute_rules
+
 
 
 class LifecycleMixin:
-    DRAFT = "draft"
-    LISTED = "listed"
-    RESERVED = "reserved"
-    OCCUPIED = "occupied"
-    ARCHIVED = "archived"
-
-    ALLOWED_TRANSITIONS = {
-        DRAFT: [LISTED, ARCHIVED],
-        LISTED: [RESERVED, ARCHIVED],
-        RESERVED: [OCCUPIED, LISTED],
-        OCCUPIED: [ARCHIVED],
-        ARCHIVED: [],
-    }
+    ALLOWED_TRANSITIONS = {}
 
     def transition_to(self, new_status, *, actor=None, event_type=None):
-
+        from operations.rules import execute_rules
         allowed = self.ALLOWED_TRANSITIONS.get(self.status, [])
 
         if new_status not in allowed:

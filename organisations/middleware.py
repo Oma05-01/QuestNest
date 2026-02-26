@@ -12,7 +12,7 @@ class OrganisationMiddleware:
             return self.get_response(request)
 
         # Only apply to operator routes
-        if request.path.startswith("/organisation/") or request.path.startswith("/properties/"):
+        if request.path.startswith("/organisation/") or request.path.startswith("/assets/"):
 
             org_id = request.session.get("active_org_id")
 

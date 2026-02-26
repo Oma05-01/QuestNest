@@ -1,10 +1,8 @@
-# core_engine/models.py
-
 from django.db import models
 from django.conf import settings
 from organisations.models import Organisation
 from core.models import BaseModel
-
+from django.apps import apps
 
 class Event(BaseModel):
     organisation = models.ForeignKey(
@@ -38,7 +36,20 @@ class Event(BaseModel):
     def __str__(self):
         return f"{self.event_type} - {self.organisation.name}"
 
+    @property
+    def object(self):
+        model = apps.get_model(app_label=self.object_app, model_name=self.object_type)
+        return model.objects.get(id=self.object_id)
+
 class Task(BaseModel):
+    OPEN = "open"
+    COMPLETED = "completed"
+
+    STATUS_CHOICES = [
+        (OPEN, "Open"),
+        (COMPLETED, "Completed"),
+    ]
+
     organisation = models.ForeignKey(
         Organisation,
         on_delete=models.CASCADE,
@@ -57,14 +68,9 @@ class Task(BaseModel):
     description = models.TextField(blank=True)
 
     status = models.CharField(
-        max_length=50,
-        choices=[
-            ("pending", "Pending"),
-            ("in_progress", "In Progress"),
-            ("completed", "Completed"),
-            ("cancelled", "Cancelled"),
-        ],
-        default="pending"
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=OPEN
     )
 
     due_date = models.DateTimeField(null=True, blank=True)

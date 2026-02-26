@@ -2,7 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden
 from accounts.models import User
-from properties.models import Property
+from assets.models import Assets
 from wallet.models import Wallet
 from user_messages.models import Message
 from payments.models import Payment
@@ -12,7 +12,7 @@ from organisations.models import Membership
 @login_required
 def tenant_dashboard(request):
     user = request.user
-    saved_properties = Property.objects.filter(saved_by=user)
+    saved_properties = Assets.objects.filter(saved_by=user)
     wallet = Wallet.objects.filter(user=user).first()
     messages_list = Message.objects.filter(user=user)
 
@@ -37,8 +37,8 @@ def landlord_dashboard(request):
     if not membership or membership.role not in ["owner", "manager"]:
         return HttpResponseForbidden("You do not have access to this dashboard.")
 
-    properties = Property.objects.filter(organisation=request.organisation)
-    payments_list = Payment.objects.filter(property__organisation=request.organisation)
+    properties = Assets.objects.filter(organisation=request.organisation)
+    payments_list = Payment.objects.filter(assets__organisation=request.organisation)
     messages_list = Message.objects.filter(user=request.user)
 
     context = {
@@ -62,7 +62,7 @@ def agent_dashboard(request):
     if not membership or membership.role != "agent":
         return HttpResponseForbidden("You do not have access to this dashboard.")
 
-    managed_properties = Property.objects.filter(organisation=request.organisation)
+    managed_properties = Assets.objects.filter(organisation=request.organisation)
     leads = []  # Placeholder for future implementation
     messages_list = Message.objects.filter(user=request.user)
 
@@ -88,8 +88,8 @@ def admin_dashboard(request):
         return HttpResponseForbidden("You do not have access to this dashboard.")
 
     users_list = User.objects.filter(memberships__organisation=request.organisation)
-    properties_list = Property.objects.filter(organisation=request.organisation)
-    payments_list = Payment.objects.filter(property__organisation=request.organisation)
+    properties_list = Assets.objects.filter(organisation=request.organisation)
+    payments_list = Payment.objects.filter(assets__organisation=request.organisation)
     messages_list = Message.objects.filter(user=request.user)
 
     context = {

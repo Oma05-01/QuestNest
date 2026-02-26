@@ -1,7 +1,9 @@
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
+from django.template.base import kwarg_re
 from django.utils import timezone
 from accounts.models import User
-from properties.models import Property
+from assets.models import Unit
 from organisations.models import Organisation
 from operations.lifecycle import LifecycleMixin
 from operations.constants import EventType
@@ -34,16 +36,18 @@ class Tenancy(LifecycleMixin, models.Model):
         related_name="tenancies"
     )
 
-    property = models.ForeignKey(
-        Property,
+    unit = models.ForeignKey(
+        Unit,
         on_delete=models.CASCADE,
-        related_name="tenancies"
+        related_name="unit_tenancies",
+        null=True,
+        blank=True
     )
 
     tenant = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name="tenancies"
+        related_name="tenant_tenancies"
     )
 
     start_date = models.DateField()
@@ -59,11 +63,23 @@ class Tenancy(LifecycleMixin, models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.tenant.email} - {self.property.name}"
+        return f"{self.tenant.email} - {self.unit.name}"
+
+    def clean(self):
+        if self.unit.asset.organisation != self.organisation:
+            raise ValidationError(
+                "Unit does not belong to the specified organisation."
+            )
+
+    def save(self, *args, **kwarg):
+        if not self.organisation_id and self.unit:
+            self.organisation = self.unit.asset.organisation
+        super().save(*args, **kwarg)
 
     def activate(self, *, actor=None):
-        self.transition_to(
-            self.ACTIVE,
-            actor=actor,
-            event_type=EventType.TENANCY_ACTIVATED
-        )
+        with transaction.atomic():
+            self.transition_to(
+                self.ACTIVE,
+                actor=actor,
+                event_type=EventType.TENANCY_ACTIVATED
+            )
