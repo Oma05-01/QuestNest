@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Lease Agreement</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .section {
+            margin-top: 25px;
+        }
+
+        .clause {
+            margin-bottom: 15px;
+        }
+    </style>
+
+</head>
+
+<body>
+
+<h1>Residential Lease Agreement</h1>
+
+<div class="section">
+<strong>Tenant:</strong> {{ tenant.name }} <br>
+<strong>Unit:</strong> {{ unit.name }} <br>
+<strong>Organisation:</strong> {{ organisation.name }} <br>
+</div>
+
+<div class="section">
+<strong>Rent:</strong> {{ lease.rent_amount }} <br>
+<strong>Deposit:</strong> {{ lease.deposit_amount }} <br>
+<strong>Start Date:</strong> {{ lease.start_date }} <br>
+<strong>End Date:</strong> {{ lease.end_date }}
+</div>
+
+<div class="section">
+<h2>Terms and Conditions</h2>
+
+{% for clause in clauses %}
+<div class="clause">
+<strong>{{ clause.template.title }}</strong>
+<p>{{ clause.body }}</p>
+</div>
+{% endfor %}
+
+</div>
+
+<div class="section">
+<h2>Signatures</h2>
+
+{% for signature in signatures %}
+<p>
+{{ signature.role|title }}: {{ signature.signed_name }} <br>
+Signed at: {{ signature.signed_at }}
+</p>
+{% endfor %}
+
+</div>
+
+</body>
+</html>

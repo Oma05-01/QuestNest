@@ -3,6 +3,7 @@ from django.conf import settings
 from organisations.models import Organisation
 from core.models import BaseModel
 from django.apps import apps
+from .constants import EventType
 
 class Event(BaseModel):
     organisation = models.ForeignKey(
@@ -87,7 +88,11 @@ class EventRule(BaseModel):
     Defines what action should occur when a specific event is triggered.
     """
 
-    event_type = models.CharField(max_length=100, help_text="The event this rule responds to")
+    event_type = models.CharField(
+        max_length=100,
+        choices=EventType.choices(),  # Assuming EventType has a choices method, or pass a list of tuples
+        help_text="The event this rule responds to"
+    )
 
     organisation = models.ForeignKey(
         Organisation,
@@ -101,13 +106,15 @@ class EventRule(BaseModel):
         max_length=50,
         choices=(
             ("CREATE_TASK", "Create Task"),
+            ("SEND_EMAIL", "Send Email"),  # Easy to add later!
         ),
-        default="CREATE_TASK",
-        help_text="Type of action triggered by this rule"
+        default="CREATE_TASK"
     )
 
-    task_title = models.CharField(max_length=255)
-    task_description = models.TextField(blank=True)
+    action_payload = models.JSONField(
+        default=dict,
+        help_text="Configuration for the action (e.g., {'title': '...', 'description': '...'})"
+    )
 
     execution_order = models.PositiveIntegerField(default=1)
     is_active = models.BooleanField(default=True)
@@ -116,4 +123,22 @@ class EventRule(BaseModel):
         ordering = ["execution_order"]
 
     def __str__(self):
-        return f"{self.event_type} → {self.task_title}"
+        # Safely try to get a title if it exists in the JSON payload
+        action_name = self.action_payload.get('title', self.action_type)
+        return f"{self.event_type} → {action_name}"
+
+
+class RuleExecution(models.Model):
+
+    event = models.ForeignKey(
+        "operations.Event",
+        on_delete=models.CASCADE,
+        related_name="rule_executions"
+    )
+
+    rule_name = models.CharField(max_length=255)
+
+    executed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("event", "rule_name")

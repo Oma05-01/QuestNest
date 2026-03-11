@@ -3,6 +3,7 @@ from operations.constants import EventType
 from rentals.models import Tenancy
 from assets.models import Assets, Unit
 
+
 @register_rule(trigger_event=EventType.ESCROW_RELEASED)
 def activate_tenancy_on_escrow_release(event):
     """
@@ -44,6 +45,6 @@ def mark_unit_occupied(event):
         unit_obj.transition_to(
             Unit.OCCUPIED,
             actor=tenancy.tenant,  # or tenancy.organisation.owner
-            event_type=EventType.PROPERTY_STATUS_CHANGED,
+            event_type=EventType.ASSET_STATUS_CHANGED,
             metadata={"to": Unit.OCCUPIED}
         )

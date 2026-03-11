@@ -1,11 +1,29 @@
-from operations.models import Task
+from operations.models import Task, RuleExecution
 from operations.constants import EventType
 from operations.services.event_service import log_event
 from collections import defaultdict
 
-# Import your models so you can fetch the objects
-from escrow.models import Escrow
-from assets.models import Assets # Assuming you renamed Property to Asset
+def task_exists(organisation, title, related_object_type, related_object_id):
+    return Task.objects.filter(
+        organisation=organisation,
+        title=title,
+        related_object_type=related_object_type,
+        related_object_id=str(related_object_id)
+    ).exists()
+
+
+def rule_already_executed(event, rule_name):
+    return RuleExecution.objects.filter(
+        event=event,
+        rule_name=rule_name
+    ).exists()
+
+
+def mark_rule_executed(event, rule_name):
+    RuleExecution.objects.create(
+        event=event,
+        rule_name=rule_name
+    )
 
 # ------------------------
 # Rule Registry
@@ -41,13 +59,21 @@ def execute_rules(event, visited=None):
     sorted_rules = sorted(rules, key=lambda x: x[0])
 
     for _, rule in sorted_rules:
+
+        rule_name = rule.__name__
+
+        if rule_already_executed(event, rule_name):
+            continue
+
         rule(event, visited=visited)
+
+        mark_rule_executed(event, rule_name)
 
 # ------------------------
 # Registered Rules
 # ------------------------
 
-@register_rule(EventType.PROPERTY_STATUS_CHANGED)
+@register_rule(EventType.ASSET_STATUS_CHANGED)
 def create_tenancy_agreement_task(event, visited=None):
     """Extracted from the hard-coded block"""
     if event.metadata.get("to") == "reserved":
@@ -86,7 +112,7 @@ def escrow_funded_reserve_unit(event, visited=None):
 def escrow_released_occupy_unit(event, visited=None):
     # Fetch the actual object using the ID
     escrow = event.object
-    unit = escrow.unit
+    unit = escrow.tenancy.unit
 
     if unit.status != unit.OCCUPIED:
         unit.transition_to(
@@ -119,13 +145,48 @@ def mark_unit_occupied(event, visited=None):
             event_type=EventType.UNIT_OCCUPIED
         )
 
-@register_rule(EventType.TENANCY_ACTIVATED, priority=50)
-def create_move_in_task(event, visited=None):
-    tenancy = event.object
+@register_rule(EventType.ESCROW_FUNDED)
+def create_verification_task(event, visited=None):
+    escrow = event.object
+
+    task = Task.objects.create(
+        organisation=escrow.organisation,
+        title=f"Verify unit {escrow.unit.name} for move-in",
+        related_object_type="Escrow",
+        related_object_id=str(escrow.id),
+        created_by=None
+    )
+
+    log_event(
+        organisation=escrow.organisation,
+        actor=None,
+        event_type=EventType.TASK_CREATED,
+        object_type="Task",
+        object_id=str(task.id),
+        metadata={"triggered_by_event": event.event_type},
+        parent_event=event
+    )
+
+
+@register_rule(EventType.LEASE_SIGNED, priority=50)
+def create_lease_move_in_preparation_task(event, visited=None):
 
     Task.objects.create(
-        organisation=tenancy.organisation,
-        title=f"Prepare unit {tenancy.unit.name} for move-in",
-        related_object_type="Tenancy",
-        related_object_id=str(tenancy.id)
+        organisation=event.organisation,
+        title="Prepare property for tenant move-in",
+        related_object_type="Lease",
+        related_object_id=str(event.object_id)
     )
+
+
+@register_rule(EventType.LEASE_CREATED)
+def auto_generate_lease_pdf(event, visited=None):
+
+    from leases.models import LeaseAgreement
+    from leases.services.lease_pdf_service import generate_lease_pdf
+
+    lease = LeaseAgreement.objects.get(id=event.object_id)
+
+    generate_lease_pdf(lease)
+
+

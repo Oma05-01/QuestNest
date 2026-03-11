@@ -63,3 +63,29 @@ def admin_audit_timeline(request):
     }
 
     return render(request, "operations/admin_audit_timeline.html", context)
+
+
+def admin_timeline(request):
+
+    if not request.organisation:
+        return JsonResponse({"error": "No organisation selected"}, status=400)
+
+    events = Event.objects.filter(
+        organisation=request.organisation
+    ).order_by("-created_at")[:100]
+
+    data = []
+
+    for event in events:
+        data.append({
+            "event_type": event.event_type,
+            "actor": event.actor.name if event.actor else "System",
+            "object_type": event.object_type,
+            "object_id": event.object_id,
+            "metadata": event.metadata,
+            "created_at": event.created_at,
+        })
+
+    return JsonResponse({
+        "timeline": data
+    })

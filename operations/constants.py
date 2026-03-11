@@ -8,9 +8,23 @@ class EventType:
     ESCROW_RELEASED = "ESCROW_RELEASED"
     ESCROW_REFUNDED = "ESCROW_REFUNDED"
     USER_UPDATED = "USER_UPDATED"
-    PROPERTY_STATUS_CHANGED = "PROPERTY_STATUS_CHANGED"
+    ASSET_STATUS_CHANGED = "ASSET_STATUS_CHANGED"
     TENANCY_ACTIVATED = "TENANCY_ACTIVATED"
     TENANCY_COMPLETED = "TENANCY_COMPLETED"
     PAYMENT_STATUS_CHANGED = "PAYMENT_STATUS_CHANGED"
     UNIT_RESERVED = "UNIT_RESERVED"
     UNIT_OCCUPIED = "UNIT_OCCUPIED"
+    LEASE_SENT = "LEASE_SENT"
+    LEASE_CREATED = "LEASE_CREATED"
+    LEASE_SIGNED = "LEASE_SIGNED"
+    LEASE_ACTIVATED = "LEASE_ACTIVATED"
+    LEASE_PDF_GENERATED = "LEASE_PDF_GENERATED"
+
+    @classmethod
+    def choices(cls):
+        # Automatically generates: [("PROPERTY_CREATED", "Property Created"), ...]
+        return [
+            (value, name.replace("_", " ").title())
+            for name, value in vars(cls).items()
+            if not name.startswith("_") and isinstance(value, str)
+        ]

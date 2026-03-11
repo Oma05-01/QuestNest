@@ -2,8 +2,7 @@ from celery import shared_task
 from django.db.models import Q
 from operations.models import Event, EventRule
 from operations.services.task_service import create_task
-from operations.constants import EventType
-
+from operations.utils import get_object_from_event, format_dynamic_text
 
 @shared_task
 def process_event_rules_task(event_id):
@@ -25,30 +24,23 @@ def process_event_rules_task(event_id):
 
     for rule in rules:
         if rule.action_type == "CREATE_TASK":
-            # This now creates the task AND fires the child event automatically!
+            # 1. Get the raw text from the JSON payload (or default to empty string)
+            raw_title = rule.action_payload.get("title", "System Task")
+            raw_description = rule.action_payload.get("description", "")
+
+            # 2. Fetch the actual object (e.g., the Escrow instance)
+            related_object = get_object_from_event(event)
+
+            # 3. Parse the strings
+            parsed_title = format_dynamic_text(raw_title, related_object)
+            parsed_description = format_dynamic_text(raw_description, related_object)
+
+            # 4. Create the task
             create_task(
                 organisation=event.organisation,
-                title=rule.task_title,
-                description=rule.task_description,
+                title=parsed_title,
+                description=parsed_description,
                 related_object_type=event.object_type,
                 related_object_id=event.object_id,
-                parent_event=event  # Pass the trigger event to link them
-            )
-
-            # Note: We must import log_event locally inside the task
-            # to avoid a circular import error with services.py
-            from operations.services.event_service import log_event
-
-            # Log child event (This safely queues another background task!)
-            log_event(
-                organisation=event.organisation,
-                actor=None,
-                event_type=EventType.TASK_CREATED,
-                object_type="Task",
-                object_id=str(task.id),
-                metadata={
-                    "triggered_by_event": event.event_type,
-                    "triggered_by_rule": str(rule.id)  # Good practice to track this!
-                },
                 parent_event=event
             )

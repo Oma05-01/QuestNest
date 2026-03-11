@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'wallet',
     'payments',
     'assets',
+    'leases',
     'operations',
     'rentals',
     'user_messages',

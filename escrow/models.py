@@ -79,11 +79,11 @@ class Escrow(LifecycleMixin, models.Model):
     released_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"Escrow {self.id} - {self.unit.name}"
+        return f"Escrow {self.id} - {self.tenancy.unit.name}"
 
     def save(self, *args, **kwargs):
-        if not self.organisation_id and self.unit:
-            self.organisation = self.unit.asset.organisation
+        if not self.organisation_id and self.tenancy.unit:
+            self.organisation = self.tenancy.unit.asset.organisation
         super().save(*args, **kwargs)
 
     def fund(self, *, actor=None):
@@ -99,7 +99,7 @@ class Escrow(LifecycleMixin, models.Model):
                 amount=self.amount,
                 transaction_type='debit',
                 reference=f"ESCROW-FUND-{uuid.uuid4()}",
-                description=f"Escrow funding for {self.unit.name}"
+                description=f"Escrow funding for {self.tenancy.unit.name}"
             )
 
             self.transition_to(
@@ -119,7 +119,7 @@ class Escrow(LifecycleMixin, models.Model):
                 amount=self.amount,
                 transaction_type='credit',
                 reference=f"ESCROW-RELEASE-{uuid.uuid4()}",
-                description=f"Escrow release for {self.unit.name}"
+                description=f"Escrow release for {self.tenancy.unit.name}"
             )
 
             self.transition_to(
@@ -139,12 +139,15 @@ class Escrow(LifecycleMixin, models.Model):
                 amount=self.amount,
                 transaction_type='credit',
                 reference=f"ESCROW-REFUND-{uuid.uuid4()}",
-                description=f"Escrow refund for {self.unit.name}"
+                description=f"Escrow refund for {self.tenancy.unit.name}"
             )
 
             self.transition_to(
-                self.REFUNDED,
+                self.RELEASED,
                 actor=actor,
                 event_type=EventType.ESCROW_REFUNDED
             )
 
+    @property
+    def unit(self):
+        return self.tenancy.unit if self.tenancy else None
