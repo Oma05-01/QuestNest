@@ -1,14 +1,13 @@
 from django.core.exceptions import ValidationError
 
 from payments.permissions import require_admin
-from payments.services.rent_flow import (
-    release_rent_escrow,
-    refund_rent_escrow
-)
+from operations.services.event_service import log_event
+from operations.constants import EventType
+
 
 def admin_release_escrow(*, admin_user, escrow):
     """
-    Admin-controlled escrow release.
+    Admin triggers escrow release via event.
     """
 
     require_admin(admin_user)
@@ -16,12 +15,21 @@ def admin_release_escrow(*, admin_user, escrow):
     if escrow.status != escrow.FUNDED:
         raise ValidationError("Only funded escrows can be released.")
 
-    return release_rent_escrow(escrow=escrow)
+    log_event(
+        organisation=escrow.organisation,
+        actor=admin_user,
+        event_type=EventType.ESCROW_RELEASE_REQUESTED,
+        object_type="Escrow",
+        object_id=str(escrow.id),
+        metadata={
+            "escrow_id": escrow.id
+        }
+    )
 
 
 def admin_refund_escrow(*, admin_user, escrow, reason=None):
     """
-    Admin-controlled escrow refund.
+    Admin triggers escrow refund via event.
     """
 
     require_admin(admin_user)
@@ -29,5 +37,14 @@ def admin_refund_escrow(*, admin_user, escrow, reason=None):
     if escrow.status != escrow.FUNDED:
         raise ValidationError("Only funded escrows can be refunded.")
 
-    # (Optional) store refund reason later
-    return refund_rent_escrow(escrow=escrow)
+    log_event(
+        organisation=escrow.organisation,
+        actor=admin_user,
+        event_type=EventType.ESCROW_REFUND_REQUESTED,
+        object_type="Escrow",
+        object_id=str(escrow.id),
+        metadata={
+            "escrow_id": escrow.id,
+            "reason": reason
+        }
+    )

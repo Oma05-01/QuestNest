@@ -1,6 +1,5 @@
 from django.db import models
 from accounts.models import User
-from django.db.models import Q
 from organisations.models import Organisation
 from operations.lifecycle import LifecycleMixin
 
@@ -29,6 +28,13 @@ class Assets(LifecycleMixin, models.Model):
 
     organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name="assets", null=True, blank=True)
     name = models.CharField(max_length=255)
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="owned_assets",
+        blank=True,
+        null=True
+    )
     location = models.TextField()
     status = models.CharField(
         max_length=20,

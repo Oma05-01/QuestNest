@@ -1,3 +1,5 @@
+from typing import Any
+
 from django.db import models
 from accounts.models import User
 from django.db.models import Sum
@@ -14,14 +16,16 @@ class Wallet(models.Model):
 
     @property
     def balance(self):
+        # self.transactions is automatically available because of the related_name
+        from django.db.models import Sum
 
         credits = self.transactions.filter(
             transaction_type="credit"
-        ).aggregate(models.Sum("amount"))["amount__sum"] or 0
+        ).aggregate(Sum("amount"))["amount__sum"] or 0
 
         debits = self.transactions.filter(
             transaction_type="debit"
-        ).aggregate(models.Sum("amount"))["amount__sum"] or 0
+        ).aggregate(Sum("amount"))["amount__sum"] or 0
 
         return credits - debits
 
@@ -60,3 +64,11 @@ class WalletTransaction(models.Model):
     description = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(amount=0),
+                name="amount_not_zero"
+            )
+        ]

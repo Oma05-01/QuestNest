@@ -59,8 +59,21 @@ class Tenancy(LifecycleMixin, models.Model):
         default=PENDING
     )
 
+    rent_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    # deposit_amount might just be rent_amount
+    deposit_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    grace_period_days = models.IntegerField(default=3)
+
+    rent_cycle_days = models.IntegerField(default=30, null=True, blank=True)
+    next_payment_date = models.DateField(null=True, blank=True)
+
+    late_fee_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    late_fee_applied = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.tenant.email} - {self.unit.name}"

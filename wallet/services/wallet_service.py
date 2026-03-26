@@ -1,27 +1,36 @@
-import uuid
-
 from django.db import transaction
-
-from escrow.models import Escrow
 from wallet.models import WalletTransaction
 
-
-def transfer_to_escrow(wallet, amount, escrow, actor=None):
-    from operations.services.event_service import log_event
-    from operations.constants import EventType
+def create_wallet_transaction(
+    *,
+    wallet,
+    amount,
+    transaction_type,
+    reference,
+    description=""
+):
+    """
+    Safe wallet transaction creator:
+    - Prevents duplicates (idempotent)
+    - Ensures atomic balance updates
+    """
 
     with transaction.atomic():
-        if wallet.balance < amount:
-            raise ValueError("Insufficient funds")
 
-        # Debit wallet
-        WalletTransaction.objects.create(
+        existing = WalletTransaction.objects.filter(reference=reference).first()
+        if existing:
+            return existing  # Prevent duplicate execution
+
+        # Compute balance safely
+        if transaction_type == "debit" and wallet.balance < amount:
+            raise ValueError("Insufficient balance.")
+
+        tx = WalletTransaction.objects.create(
             wallet=wallet,
             amount=amount,
-            transaction_type='debit',
-            reference=f"ESCROW-FUND-{uuid.uuid4()}",
-            description=f"Funding escrow {escrow.id}"
+            transaction_type=transaction_type,
+            reference=reference,
+            description=description
         )
 
-        # Mark escrow funded
-        escrow.transition_to(Escrow.FUNDED, actor=actor, event_type=EventType.ESCROW_FUNDED)
+        return tx

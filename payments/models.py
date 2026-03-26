@@ -1,24 +1,27 @@
 from django.db import models
 from accounts.models import User
-from assets.models import Unit
+from rentals.models import Tenancy
 from escrow.models import Escrow
 from operations.lifecycle import LifecycleMixin
 from organisations.models import Organisation
 
 
 class Payment(LifecycleMixin, models.Model):
-    PENDING = "pending"
+    INITIATED = "initiated"
     SUCCESS = "success"
     FAILED = "failed"
+    PROCESSING = "processing"
 
     STATUS_CHOICES = [
-        (PENDING, "Pending"),
+        (INITIATED, "Initiated"),
         (SUCCESS, "Success"),
         (FAILED, "Failed"),
+        (PROCESSING, "Processing"),
     ]
 
     ALLOWED_TRANSITIONS = {
-        PENDING: [SUCCESS, FAILED],
+        INITIATED: [PROCESSING, FAILED],
+        PROCESSING: [SUCCESS, FAILED],
         SUCCESS: [],
         FAILED: [],
     }
@@ -30,22 +33,26 @@ class Payment(LifecycleMixin, models.Model):
         blank=True
     )
 
+    retry_count = models.IntegerField(default=0)
+    last_retry_at = models.DateTimeField(null=True, blank=True)
+
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    unit = models.ForeignKey(Unit, on_delete=models.CASCADE,
-        null=True,
-        blank=True)
+    tenancy = models.ForeignKey(
+        Tenancy,
+        on_delete=models.CASCADE,
+        related_name="payments", null=True, blank=True
+    )
+    reference = models.CharField(max_length=255, unique=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    reference = models.CharField(max_length=255)
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
-        default=PENDING
+        default=INITIATED
     )
     metadata = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
         return f"Payment of {self.amount} by {self.user.email} | {self.reference} - {self.status}"
-
 
 
 class EscrowActionLog(models.Model):

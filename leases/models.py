@@ -1,7 +1,9 @@
 from django.db import models
 
-# Create your models here.
-class LeaseAgreement(models.Model):
+from operations.lifecycle import LifecycleMixin
+
+
+class LeaseAgreement(LifecycleMixin, models.Model):
 
     DRAFT = "draft"
     SENT = "sent"

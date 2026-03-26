@@ -7,6 +7,8 @@ from wallet.models import WalletTransaction
 
 from operations.services.event_service import log_event
 from operations.constants import EventType
+from wallet.services.wallet_service import create_wallet_transaction
+
 
 def create_rent_escrow(*, tenant, landlord, property_obj, amount):
     """
@@ -60,11 +62,12 @@ def fund_rent_escrow(*, escrow):
         raise ValidationError("Insufficient wallet balance.")
 
     # Debit tenant wallet
-    WalletTransaction.objects.create(
+    create_wallet_transaction(
         wallet=tenant_wallet,
         amount=escrow.amount,
         transaction_type=WalletTransaction.DEBIT,
-        reference=f"Rent escrow #{escrow.id}"
+        reference=f"Rent escrow #{escrow.id}",
+        description=f"Escrow funding for {escrow.tenancy.unit.name}"
     )
 
     escrow.status = Escrow.FUNDED
@@ -84,11 +87,11 @@ def release_rent_escrow(*, escrow):
     landlord_wallet = escrow.landlord.wallet
 
     # Credit landlord wallet
-    WalletTransaction.objects.create(
+    create_wallet_transaction(
         wallet=landlord_wallet,
         amount=escrow.amount,
         transaction_type=WalletTransaction.CREDIT,
-        reference=f"Rent payout escrow #{escrow.id}"
+        reference=f"Rent payout escrow #{escrow.id}",
     )
 
     escrow.status = Escrow.RELEASED
@@ -108,11 +111,11 @@ def refund_rent_escrow(*, escrow):
     tenant_wallet = escrow.tenant.wallet
 
     # Credit tenant wallet
-    WalletTransaction.objects.create(
+    create_wallet_transaction(
         wallet=tenant_wallet,
         amount=escrow.amount,
         transaction_type=WalletTransaction.CREDIT,
-        reference=f"Rent refund escrow #{escrow.id}"
+        reference=f"Rent refund escrow #{escrow.id}",
     )
 
     escrow.status = Escrow.REFUNDED

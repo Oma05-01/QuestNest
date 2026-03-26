@@ -34,13 +34,19 @@ class Event(BaseModel):
 
     metadata = models.JSONField(default=dict, blank=True)
 
+    status = models.CharField(
+        max_length=20,
+        default="pending",
+        choices=[
+            ("pending", "Pending"),
+            ("processed", "Processed"),
+            ("failed", "Failed"),
+        ]
+    )
+
     def __str__(self):
         return f"{self.event_type} - {self.organisation.name}"
 
-    @property
-    def object(self):
-        model = apps.get_model(app_label=self.object_app, model_name=self.object_type)
-        return model.objects.get(id=self.object_id)
 
 class Task(BaseModel):
     OPEN = "open"
@@ -81,7 +87,6 @@ class Task(BaseModel):
 
     def __str__(self):
         return self.title
-
 
 class EventRule(BaseModel):
     """
@@ -126,7 +131,6 @@ class EventRule(BaseModel):
         # Safely try to get a title if it exists in the JSON payload
         action_name = self.action_payload.get('title', self.action_type)
         return f"{self.event_type} → {action_name}"
-
 
 class RuleExecution(models.Model):
 

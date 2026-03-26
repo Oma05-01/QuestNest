@@ -1,15 +1,11 @@
 # escrow/models.py
 from django.db import models
 from accounts.models import User
-from wallet.models import Wallet
 from django.utils import timezone
-from wallet.models import WalletTransaction
-import uuid
-from django.db import transaction
-from operations.services.event_service import log_event
 from operations.constants import EventType
 from operations.lifecycle import LifecycleMixin
 from rentals.models import Tenancy
+
 
 class Escrow(LifecycleMixin, models.Model):
 
@@ -76,6 +72,8 @@ class Escrow(LifecycleMixin, models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    metadata = models.JSONField(default=dict, blank=True)
+
     released_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
@@ -87,66 +85,40 @@ class Escrow(LifecycleMixin, models.Model):
         super().save(*args, **kwargs)
 
     def fund(self, *, actor=None):
+        """
+        Transition escrow to FUNDED.
 
-        with transaction.atomic():
-            tenant_wallet = self.tenant.wallet
+        No financial logic here.
+        All side effects are handled by rules.
+        """
+        if self.status != self.PENDING:
+            return self  # idempotent safety
 
-            if tenant_wallet.balance < self.amount:
-                raise ValueError("Insufficient wallet balance.")
-
-            WalletTransaction.objects.create(
-                wallet=tenant_wallet,
-                amount=self.amount,
-                transaction_type='debit',
-                reference=f"ESCROW-FUND-{uuid.uuid4()}",
-                description=f"Escrow funding for {self.tenancy.unit.name}"
-            )
-
-            self.transition_to(
-                self.FUNDED,
-                actor=actor,
-                event_type=EventType.ESCROW_FUNDED
-            )
+        return self.transition_to(
+            self.FUNDED,
+            actor=actor,
+            event_type=EventType.ESCROW_FUNDED,
+        )
 
     def release(self, *, actor=None):
+        if self.status != self.FUNDED:
+            return self
 
-        with transaction.atomic():
-
-            landlord_wallet = self.landlord.wallet
-
-            WalletTransaction.objects.create(
-                wallet=landlord_wallet,
-                amount=self.amount,
-                transaction_type='credit',
-                reference=f"ESCROW-RELEASE-{uuid.uuid4()}",
-                description=f"Escrow release for {self.tenancy.unit.name}"
-            )
-
-            self.transition_to(
-                self.RELEASED,
-                actor=actor,
-                event_type=EventType.ESCROW_RELEASED
-            )
+        return self.transition_to(
+            self.RELEASED,
+            actor=actor,
+            event_type=EventType.ESCROW_RELEASED
+        )
 
     def refund(self, *, actor=None):
+        if self.status != self.FUNDED:
+            return self
 
-        with transaction.atomic():
-
-            tenant_wallet = self.tenant.wallet
-
-            WalletTransaction.objects.create(
-                wallet=tenant_wallet,
-                amount=self.amount,
-                transaction_type='credit',
-                reference=f"ESCROW-REFUND-{uuid.uuid4()}",
-                description=f"Escrow refund for {self.tenancy.unit.name}"
-            )
-
-            self.transition_to(
-                self.RELEASED,
-                actor=actor,
-                event_type=EventType.ESCROW_REFUNDED
-            )
+        return self.transition_to(
+            self.REFUNDED,
+            actor=actor,
+            event_type=EventType.ESCROW_REFUNDED
+        )
 
     @property
     def unit(self):
