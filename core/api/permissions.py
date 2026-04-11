@@ -68,6 +68,21 @@ class BelongsToOrganisation(permissions.BasePermission):
     """
     message = "You do not have access to resources outside your organisation."
 
+    def has_permission(self, request, view):
+        # 1. Ensure the user is logged in and has an organisation linked
+        if not request.user.is_authenticated or not request.user.organisation:
+            return False
+
+        # 🟢 THE KYC FIX: Block 'Write' actions if the Org isn't verified
+        # We allow 'SAFE_METHODS' (GET, HEAD, OPTIONS) so they can see their dashboard
+        # but we block POST, PUT, DELETE (Transactions)
+        if request.method not in permissions.SAFE_METHODS:
+            if not request.user.organisation.is_verified:
+                self.message = "Transaction blocked. Your organisation is not yet verified."
+                return False
+
+        return True
+
     def has_object_permission(self, request, view, obj):
         # 🛡️ This is the heart of Multi-Tenancy
         # obj is the model instance (Wallet, Payment, Tenancy, etc.)
