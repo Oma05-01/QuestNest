@@ -7,7 +7,7 @@ from django.http import HttpResponseForbidden
 from organisations.models import Membership
 from operations.services.event_service import log_event
 from operations.constants import EventType
-from organisations.permissions import membership_required, operator_required
+from core.api.permissions import membership_required, operator_required
 
 # List all properties
 @login_required

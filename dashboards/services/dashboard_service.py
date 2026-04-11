@@ -26,7 +26,7 @@ def get_tenant_dashboard_data(user: User) -> dict:
             "asset_name": active_tenancy.unit.asset.name,  # Adjust field name if needed
             "unit_name": active_tenancy.unit.name,
             "rent_amount": active_tenancy.rent_amount,
-            "next_due_date": active_tenancy.next_due_date,  # Assuming this field exists
+            "next_due_date": active_tenancy.next_payment_date,  # Assuming this field exists
         }
 
     # 3. Action Items (Pending Tasks)

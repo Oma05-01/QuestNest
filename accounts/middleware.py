@@ -3,6 +3,8 @@ from django.urls import reverse
 
 class LoginRequiredMiddleware:
     PUBLIC_PATHS = [
+        '/api/token/',
+        '/api/token/refresh/',
         '/accounts/enter-email/',
         '/accounts/enter-password/',
         '/accounts/register/',
@@ -29,6 +31,11 @@ class LoginRequiredMiddleware:
 
     def __call__(self, request):
         path = request.path
+
+
+        if path.startswith('/api/'):
+            return self.get_response(request)
+
 
         # Allow public URLs
         if not any(path.startswith(p) for p in self.PUBLIC_PATHS):

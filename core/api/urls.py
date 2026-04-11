@@ -9,7 +9,7 @@ urlpatterns = [
     path("wallet/", include("wallet.api.urls")),
     path("escrows/", include("escrow.api.urls")),
     path("notifications/", include("notifications.api.urls")),
-    path("events/", include("operations.api.urls")),
+    path("operations/", include("operations.api.urls")),
     path("organisations/", include("organisations.api.urls")),
     path("verification/", include("verification.api.urls")),
     path("messages/", include("user_messages.api.urls")),

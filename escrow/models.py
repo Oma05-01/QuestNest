@@ -7,6 +7,7 @@ from operations.lifecycle import LifecycleMixin
 from rentals.models import Tenancy
 
 
+
 class Escrow(LifecycleMixin, models.Model):
 
     PENDING = 'pending'
@@ -80,7 +81,8 @@ class Escrow(LifecycleMixin, models.Model):
         return f"Escrow {self.id} - {self.tenancy.unit.name}"
 
     def save(self, *args, **kwargs):
-        if not self.organisation_id and self.tenancy.unit:
+        # 🟢 CHANGED: Safely check if tenancy actually exists before accessing .unit
+        if not self.organisation_id and self.tenancy and self.tenancy.unit:
             self.organisation = self.tenancy.unit.asset.organisation
         super().save(*args, **kwargs)
 

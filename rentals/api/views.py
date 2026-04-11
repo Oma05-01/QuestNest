@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from core.api.permissions import IsTenant
+from core.api.permissions import IsTenant, BelongsToOrganisation
 from rentals.models import Tenancy
 from .serializers import TenancySerializer
 
@@ -9,7 +9,7 @@ class MyTenanciesView(APIView):
     """
     GET /api/tenancies/me/
     """
-    permission_classes = [IsAuthenticated, IsTenant]
+    permission_classes = [IsAuthenticated, IsTenant, BelongsToOrganisation]
 
     def get(self, request):
         # Only fetch tenancies belonging to the logged-in tenant

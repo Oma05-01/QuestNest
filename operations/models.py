@@ -30,7 +30,7 @@ class Event(BaseModel):
     event_type = models.CharField(max_length=100)
 
     object_type = models.CharField(max_length=100)
-    object_id = models.UUIDField(null=True, blank=True)
+    object_id = models.CharField(max_length=255, null=True, blank=True)
 
     metadata = models.JSONField(default=dict, blank=True)
 
@@ -47,6 +47,10 @@ class Event(BaseModel):
     def __str__(self):
         return f"{self.event_type} - {self.organisation.name}"
 
+    @property
+    def object(self):
+        from operations.utils import get_object_from_event
+        return get_object_from_event(self)
 
 class Task(BaseModel):
     OPEN = "open"
@@ -83,7 +87,7 @@ class Task(BaseModel):
     due_date = models.DateTimeField(null=True, blank=True)
 
     related_object_type = models.CharField(max_length=100, null=True, blank=True)
-    related_object_id = models.UUIDField(null=True, blank=True)
+    related_object_id = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return self.title

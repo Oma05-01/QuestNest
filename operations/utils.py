@@ -15,7 +15,8 @@ def get_object_from_event(event):
         if model.__name__ == event.object_type:
             try:
                 return model.objects.get(id=event.object_id)
-            except model.DoesNotExist:
+            except (model.DoesNotExist, ValueError, TypeError):
+                # 🟢 Added ValueError and TypeError to catch UUID vs Integer mismatches!
                 return None
 
     return None

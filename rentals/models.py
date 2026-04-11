@@ -1,7 +1,5 @@
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.template.base import kwarg_re
-from django.utils import timezone
 from accounts.models import User
 from assets.models import Unit
 from organisations.models import Organisation
@@ -84,10 +82,10 @@ class Tenancy(LifecycleMixin, models.Model):
                 "Unit does not belong to the specified organisation."
             )
 
-    def save(self, *args, **kwarg):
+    def save(self, *args, **kwargs):
         if not self.organisation_id and self.unit:
             self.organisation = self.unit.asset.organisation
-        super().save(*args, **kwarg)
+        super().save(*args, **kwargs)
 
     def activate(self, *, actor=None):
         with transaction.atomic():

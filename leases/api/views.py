@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 
-from core.api.permissions import IsLandlordOrAdmin, IsTenant
+from core.api.permissions import IsLandlordOrAdmin, BelongsToOrganisation
 from leases.models import LeaseAgreement, LeaseSignature
 from leases.services.lease_service import (
     create_lease_from_tenancy,
@@ -43,7 +43,7 @@ class LeaseListView(APIView):
 
 class LeaseSendView(APIView):
     """ POST /api/leases/<uuid:pk>/send/ """
-    permission_classes = [IsAuthenticated, IsLandlordOrAdmin]
+    permission_classes = [IsAuthenticated, IsLandlordOrAdmin, BelongsToOrganisation]
 
     def post(self, request, pk):
         lease = get_object_or_404(LeaseAgreement, pk=pk, tenancy__unit__asset__owner=request.user)

@@ -2,7 +2,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponseForbidden
 from .models import Event, Task
 from organisations.models import Membership
-from organisations.permissions import membership_required, operator_required, roles_required, role_required
+from core.api.permissions import membership_required, operator_required, roles_required, role_required
 from django.shortcuts import render
 
 @login_required

@@ -31,13 +31,17 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'rest_framework',
+    'channels',
+    'django_filters',
     'accounts',
     'dashboards',
     'wallet',
@@ -60,17 +64,18 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware', # 🟢 Move to top
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
     'organisations.middleware.OrganisationMiddleware',
-    'verification.middleware.VerifiedEntityMiddleware',
+    'verification.middleware.VerifiedEntityMiddleware', # 🟢 Now 'user here' will print!
     'accounts.middleware.LoginRequiredMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'allauth.account.middleware.AccountMiddleware',
 ]
 
 ROOT_URLCONF = 'questnest.urls'
@@ -135,6 +140,35 @@ USE_I18N = True
 
 USE_TZ = True
 
+# questnest/settings.py
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    # 🟢 1. GLOBAL PAGINATION
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,  # Safe chunk size
+
+    # 🟢 2. GLOBAL RATE LIMITING (THROTTLING)
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '50/hour',  # Unauthenticated users (very strict)
+        'user': '120/minute',  # Authenticated users (2 requests per second)
+    },
+
+    # Optional but recommended: Default to returning JSON instead of the browsable API UI in production
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',  # Remove this line when going to production!
+    ]
+}
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
@@ -147,3 +181,30 @@ CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
+
+# 🟢 PHASE 10: RELIABILITY CONFIGS
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 5 * 60  # Hard kill tasks that take longer than 5 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 4 * 60 # Give tasks a chance to cleanly exit before hard kill
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000 # Restarts workers to prevent memory leaks over time
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+]
+
+LOGIN_REQUIRED_IGNORE_PATHS = [
+    r'/api/token/.*',
+    r'/api/operations/.*',
+]
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
+
+ASGI_APPLICATION = 'questnest.asgi.application'

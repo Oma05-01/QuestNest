@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from core.api.permissions import IsLandlord
+from core.api.permissions import IsLandlord, BelongsToOrganisation
 from assets.models import Assets
 from assets.services.asset_service import create_asset
 from .serializers import AssetSerializer, CreateAssetSerializer
@@ -14,7 +14,7 @@ class AssetListView(APIView):
     def get_permissions(self):
         # Landlords can create, anyone authenticated can read (if we want tenants to see listings later)
         if self.request.method == 'POST':
-            return [IsAuthenticated(), IsLandlord()]
+            return [IsAuthenticated(), IsLandlord(), BelongsToOrganisation()]
         return [IsAuthenticated()]
 
     def get(self, request):

@@ -6,6 +6,19 @@ class OrganisationMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+
+        if request.path.startswith('/admin/') or request.path.startswith('/api/token/'):
+            return self.get_response(request)
+
+        if request.user.is_authenticated and request.user.is_superuser:
+            return self.get_response(request)
+
+        if request.path.startswith('/api/token/') or request.path.startswith('/accounts/'):
+            return self.get_response(request)
+
+        if request.user.is_authenticated and request.user.is_superuser:
+            return self.get_response(request)
+
         request.organisation = None
 
         if not request.user.is_authenticated:

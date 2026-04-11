@@ -20,8 +20,8 @@ class Payment(LifecycleMixin, models.Model):
     ]
 
     ALLOWED_TRANSITIONS = {
-        INITIATED: [PROCESSING, FAILED],
-        PROCESSING: [SUCCESS, FAILED],
+        INITIATED: [PROCESSING, SUCCESS, FAILED],  # 🟢 Added SUCCESS here for instant wallet transfers
+        PROCESSING: [SUCCESS, FAILED],  # Kept for future third-party card payments
         SUCCESS: [],
         FAILED: [],
     }
@@ -42,6 +42,7 @@ class Payment(LifecycleMixin, models.Model):
         on_delete=models.CASCADE,
         related_name="payments", null=True, blank=True
     )
+    created_at = models.DateTimeField(auto_now_add=True, blank=True, null=True)
     reference = models.CharField(max_length=255, unique=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(

@@ -1,6 +1,6 @@
 from django.core.exceptions import ValidationError
 
-from payments.permissions import require_admin
+from core.api.permissions import require_admin
 from operations.services.event_service import log_event
 from operations.constants import EventType
 

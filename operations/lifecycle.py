@@ -9,10 +9,6 @@ class LifecycleMixin:
     status: str
     organisation: "Organisation"
 
-    def save(self, *args, **kwargs):
-        """This is just a stub for static analysis; actual save comes from Django Model"""
-        pass
-
     def transition_to(self, new_status, *, actor=None, event_type=None, metadata=None):
         from operations.rules import execute_rules
 

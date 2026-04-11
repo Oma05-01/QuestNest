@@ -1,5 +1,7 @@
 from datetime import timedelta
+import traceback
 
+from notifications.services.notification_service import trigger_notification
 from operations.models import Task, RuleExecution
 from operations.constants import EventType
 from operations.services.event_service import log_event
@@ -43,33 +45,65 @@ def register_rule(trigger_event, priority=100):
 
 def execute_rules(event, visited=None):
     """
-    Execute all rules registered for this event type.
+    Execute all rules registered for this event type with a Circuit Breaker.
     """
-    # Simply trigger registered rules. No hard-coded logic here!
     if visited is None:
         visited = set()
 
-        # Prevent circular execution
+    # 1. 🛡️ LOCAL RECURSION GUARD (Memory-based)
+    # Stops loops within the SAME function call/task.
     if event.id in visited:
         return
-
     visited.add(event.id)
 
-    rules = _RULES_REGISTRY.get(event.event_type, [])
+    # 2. ⚡ ANCESTRY CIRCUIT BREAKER (Database-based)
+    # Stops loops across DIFFERENT Celery tasks by checking the chain depth.
+    depth = 0
+    current = event
+    while current.parent_event and depth < 10:
+        depth += 1
+        current = current.parent_event
 
-    # Sort by priority (lower number runs first)
+    if depth >= 10:
+        # We save the failure directly to the event so we can see it in the dashboard
+        metadata = event.metadata or {}
+        metadata["error_loop"] = f"Infinite recursion detected. Chain depth: {depth}"
+        event.metadata = metadata
+        event.status = "failed"
+        event.save(update_fields=['metadata', 'status'])
+        return
+
+    # 3. REGISTRY LOOKUP
+    rules = _RULES_REGISTRY.get(event.event_type, [])
     sorted_rules = sorted(rules, key=lambda x: x[0])
 
     for _, rule in sorted_rules:
-
         rule_name = rule.__name__
 
+        # 4. IDEMPOTENCY GUARD
+        # Uses the RuleExecution model to ensure we don't repeat work.
         if rule_already_executed(event, rule_name):
             continue
 
-        rule(event, visited=visited)
+        # 5. OBSERVABILITY CATCHER
+        try:
+            # We pass visited along in case rules call execute_rules directly
+            rule(event, visited=visited)
+            mark_rule_executed(event, rule_name)
 
-        mark_rule_executed(event, rule_name)
+        except Exception as e:
+            error_trace = traceback.format_exc()
+
+            metadata = event.metadata or {}
+            metadata[f"error_{rule_name}"] = str(e)
+            metadata[f"traceback_{rule_name}"] = error_trace
+
+            event.metadata = metadata
+            event.status = "failed"
+            event.save(update_fields=['metadata', 'status'])
+
+            # 🛑 CRITICAL: Stop the chain if a rule fails
+            break
 
 # ------------------------
 # Registered Rules
@@ -106,6 +140,7 @@ def validate_payment_balance(event, visited=None):
 def create_escrow_on_payment(event, visited=None):
     from escrow.models import Escrow
     from rentals.models import Tenancy
+    from payments.models import Payment
 
     metadata = event.metadata or {}
 
@@ -115,6 +150,10 @@ def create_escrow_on_payment(event, visited=None):
     reference = metadata.get("reference")
 
     if not tenancy_id or not amount or not payment_id:
+        return
+
+    payment = Payment.objects.get(id=payment_id)
+    if payment.status == Payment.FAILED:
         return
 
     tenancy = Tenancy.objects.get(id=tenancy_id)
@@ -143,60 +182,24 @@ def create_escrow_on_payment(event, visited=None):
 
     return escrow
 
-@register_rule(EventType.LEASE_SIGNED, priority=10)
-def create_tenancy_from_lease(event, visited=None):
-    from leases.models import LeaseAgreement
-    from rentals.models import Tenancy
-
-    lease = event.object
-
-    # ✅ idempotency: prevent duplicate tenancy
-    existing = Tenancy.objects.filter(
-        unit=lease.unit,
-        tenant=lease.tenant,
-        start_date=lease.start_date
-    ).first()
-
-    if existing:
-        return existing
-
-    tenancy = Tenancy.objects.create(
-        organisation=lease.organisation,
-        unit=lease.unit,
-        tenant=lease.tenant,
-        start_date=lease.start_date,
-        end_date=lease.end_date,
-        status=Tenancy.PENDING
-    )
-
-    return tenancy
 
 @register_rule(EventType.LEASE_SIGNED, priority=20)
 def trigger_payment_for_lease(event, visited=None):
-    from leases.models import LeaseAgreement
-    from rentals.models import Tenancy
     from payments.services.payment_service import pay_rent
 
     lease = event.object
+    tenancy = lease.tenancy
 
-    tenancy = Tenancy.objects.filter(
-        unit=lease.unit,
-        tenant=lease.tenant,
-        start_date=lease.start_date
-    ).first()
-
-    if not tenancy:
-        return
-
-    # Optional: prevent duplicate payment
+    # Prevent duplicate payment initiation
     if tenancy.payments.filter(status="initiated").exists():
         return
 
     pay_rent(
-        tenant=lease.tenant,
+        tenant=tenancy.tenant,
         tenancy=tenancy,
-        amount=lease.amount  # or lease.rent_amount
+        amount=lease.rent_amount
     )
+
 
 @register_rule(EventType.PAYMENT_INITIATED, priority=20)
 def fund_escrow_on_payment(event, visited=None):
@@ -204,16 +207,19 @@ def fund_escrow_on_payment(event, visited=None):
     from payments.models import Payment
     from wallet.models import WalletTransaction
     from wallet.services.wallet_service import create_wallet_transaction
+    from decimal import Decimal
 
     metadata = event.metadata or {}
 
     tenancy_id = metadata.get("tenancy_id")
-    amount = metadata.get("amount")
+    amount_str = metadata.get("amount")
     payment_id = metadata.get("payment_id")
     reference = metadata.get("reference")
 
-    if not tenancy_id or not amount or not payment_id:
+    if not tenancy_id or not amount_str or not payment_id:
         return
+
+    amount = Decimal(amount_str)
 
     payment = Payment.objects.get(id=payment_id)
 
@@ -232,37 +238,41 @@ def fund_escrow_on_payment(event, visited=None):
 
     tenant_wallet = escrow.tenant.wallet
 
-    try:
-        # ✅ Idempotent debit (reference MUST be unique)
-        create_wallet_transaction(
-            wallet=tenant_wallet,
-            amount=amount,
-            transaction_type=WalletTransaction.DEBIT,
-            reference=reference,
-            description=f"Rent payment for {escrow.tenancy.unit.name}"
-        )
+    # 🔴 1. COMMENTED OUT THE TRY
+    # try:
 
-        # ✅ Transition escrow → FUNDED
-        if escrow.status != Escrow.FUNDED:
-            escrow.transition_to(
-                Escrow.FUNDED,
-                actor=event.actor,
-                event_type=EventType.ESCROW_FUNDED,
-                metadata={
-                    "payment_id": payment_id,
-                    "reference": reference
-                }
-            )
-    except Exception:
-        payment.transition_to(
-            Payment.FAILED,
+    # ✅ Idempotent debit (reference MUST be unique)
+    create_wallet_transaction(
+        wallet=tenant_wallet,
+        amount=amount,
+        transaction_type=WalletTransaction.DEBIT,
+        reference=reference,
+        description=f"Rent payment for {escrow.tenancy.unit.name}"
+    )
+
+    # ✅ Transition escrow → FUNDED
+    if escrow.status != Escrow.FUNDED:
+        escrow.transition_to(
+            Escrow.FUNDED,
             actor=event.actor,
-            event_type=EventType.PAYMENT_FAILED,
+            event_type=EventType.ESCROW_FUNDED,
             metadata={
-                "reason": "wallet_error"
+                "payment_id": payment_id,
+                "reference": reference
             }
         )
-        return
+
+    # 🔴 2. COMMENTED OUT THE EXCEPT
+    # except Exception:
+    #     payment.transition_to(
+    #         Payment.FAILED,
+    #         actor=event.actor,
+    #         event_type=EventType.PAYMENT_FAILED,
+    #         metadata={
+    #             "reason": "wallet_error"
+    #         }
+    #     )
+    #     return
 
 @register_rule(EventType.ESCROW_FUNDED, priority=40)
 def mark_payment_success(event, visited=None):
@@ -310,17 +320,6 @@ def activate_tenancy_after_payment(event, visited=None):
             event_type=EventType.TENANCY_ACTIVATED
         )
 
-@register_rule(EventType.PAYMENT_FAILED)
-def mark_payment_failed(event):
-    from payments.models import Payment
-
-    payment_id = event.metadata.get("payment_id")
-
-    payment = Payment.objects.get(id=payment_id)
-
-    payment.status = Payment.status.FAILED
-    payment.save(update_fields=["status"])
-
 @register_rule(EventType.ASSET_STATUS_CHANGED)
 def create_tenancy_agreement_task(event, visited=None):
     """Extracted from the hard-coded block"""
@@ -330,7 +329,6 @@ def create_tenancy_agreement_task(event, visited=None):
             title="Prepare tenancy agreement",
             related_object_type=event.object_type, # Or Property, depending on your rename
             related_object_id=event.object_id,
-            created_by=None
         )
 
         log_event(
@@ -349,7 +347,7 @@ def escrow_funded_reserve_unit(event, visited=None):
     escrow = event.object
     unit = escrow.tenancy.unit
 
-    if unit.status != unit.RESERVED:
+    if unit.status == unit.AVAILABLE:
         unit.transition_to(
             unit.RESERVED,
             actor=event.actor,
@@ -415,7 +413,6 @@ def create_verification_task(event, visited=None):
         title=f"Verify unit {escrow.unit.name} for move-in",
         related_object_type="Escrow",
         related_object_id=str(escrow.id),
-        created_by=None
     )
 
     log_event(
@@ -438,14 +435,16 @@ def set_initial_payment_date(event, visited=None):
     tenancy.next_payment_date = tenancy.start_date
     tenancy.save(update_fields=["next_payment_date"])
 
+
 @register_rule(EventType.LEASE_SIGNED, priority=50)
 def create_lease_move_in_preparation_task(event, visited=None):
+    from operations.models import Task
 
     Task.objects.create(
         organisation=event.organisation,
         title="Prepare property for tenant move-in",
-        related_object_type="Lease",
-        related_object_id=str(event.object_id)
+        related_object_type="LeaseAgreement",  # Fixed from "Lease"
+        related_object_id=str(event.object.id)  # Safely use the UUID
     )
 
 @register_rule(EventType.LEASE_CREATED)
@@ -584,36 +583,41 @@ def check_grace_period(event, visited=None):
     if today <= grace_limit:
         return  # still in grace → allow retry flow
 
+
 @register_rule(EventType.RENT_OVERDUE, priority=10)
 def apply_late_fee(event, visited=None):
     from rentals.models import Tenancy
+    from decimal import Decimal
 
-    tenancy = event.object
+    # 1. Force a fresh fetch from the DB
+    tenancy = Tenancy.objects.filter(id=event.object_id).first()
 
-    # ✅ idempotency
+    if not tenancy:
+        event.metadata["debug"] = "Tenancy not found"
+        event.save()
+        return
+
     if tenancy.late_fee_applied:
+        event.metadata["debug"] = "Already applied"
+        event.save()
         return
 
-    if tenancy.late_fee_amount <= 0:
+    # 2. Strict Decimal comparison
+    fee_amount = Decimal(str(tenancy.late_fee_amount or 0))
+    if fee_amount <= 0:
+        event.metadata["debug"] = f"Fee is {fee_amount}, skipping"
+        event.save()
         return
 
+    # 3. Apply and Save
     tenancy.late_fee_applied = True
-    tenancy.save(update_fields=["late_fee_applied"])
+    tenancy.save()
 
-    from operations.services.event_service import log_event
-    from operations.constants import EventType
+    # 4. Log Success in Event Metadata
+    event.metadata["debug"] = "Successfully applied fee"
+    event.save()
 
-    log_event(
-        organisation=tenancy.organisation,
-        actor=tenancy.tenant,
-        event_type=EventType.LATE_FEE_APPLIED,
-        object_type="Tenancy",
-        object_id=str(tenancy.id),
-        metadata={
-            "tenancy_id": str(tenancy.id),
-            "late_fee": str(tenancy.late_fee_amount)
-        }
-    )
+    # ... rest of your log_event code ...
 
 @register_rule(EventType.LATE_FEE_APPLIED, priority=20)
 def create_late_fee_payment(event, visited=None):
@@ -673,17 +677,21 @@ def notify_payment_failed(event, visited=None):
 
 @register_rule(EventType.PAYMENT_SUCCESS, priority=100)
 def notify_payment_success(event, visited=None):
-    from notifications.services.notification_service import create_notification
+    # 🟢 Only import and call the Master Trigger
+    from notifications.services.notification_service import trigger_notification
 
     payment = event.object
+    user = payment.user
 
-    create_notification(
-        user=payment.user,
-        organisation=payment.organisation,
-        title="Payment Successful",
-        message=f"Your payment of {payment.amount} was successful.",
+    # One call handles DB storage + Email dispatch
+    trigger_notification(
+        user=user,
+        organisation=payment.organisation, # Pass this explicitly
+        title="Payment Successful!",
+        message=f"Your payment of ₦{payment.amount} (Ref: {payment.reference}) was received.",
         notification_type="success",
-        metadata={"payment_id": payment.id}
+        send_email=True,
+        metadata={"payment_id": str(payment.id)}
     )
 
 @register_rule(EventType.RENT_PAYMENT_DUE, priority=90)

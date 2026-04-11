@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from core.api.permissions import IsTenant
+from core.api.permissions import IsTenant, BelongsToOrganisation
 from payments.services.payment_service import pay_rent
 from .serializers import PayRentSerializer
 
@@ -10,7 +10,7 @@ class PayRentView(APIView):
     """
     POST /api/payments/pay-rent/
     """
-    permission_classes = [IsAuthenticated, IsTenant]
+    permission_classes = [IsAuthenticated, IsTenant, BelongsToOrganisation]
 
     def post(self, request):
         # 1. Validate incoming data (Serializer)

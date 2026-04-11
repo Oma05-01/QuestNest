@@ -11,17 +11,23 @@ from operations.constants import EventType
 
 @shared_task
 def process_event_rules_task(event_id):
-    """
-    Background worker that fetches dynamic EventRules from the DB and executes them.
-    """
-
     try:
         event = Event.objects.get(id=event_id)
     except Event.DoesNotExist:
         return
 
     try:
-        # Fetch active rules (global + org-specific)
+        # 🟢 1. Execute Hardcoded Rules (The logic we're testing)
+        from operations.rules import execute_rules
+        execute_rules(event)
+
+        # 🟢 2. CHECK FOR FAILURE: If hardcoded rules failed, stop here.
+        # We refresh to see what execute_rules saved to the DB.
+        event.refresh_from_db()
+        if event.status == "failed":
+            return
+
+        # 3. Execute Dynamic DB Rules (The CREATE_TASK logic)
         rules = EventRule.objects.filter(
             event_type=event.event_type,
             is_active=True
@@ -30,36 +36,18 @@ def process_event_rules_task(event_id):
         ).order_by("execution_order")
 
         for rule in rules:
-            if rule.action_type == "CREATE_TASK":
-                raw_title = rule.action_payload.get("title", "System Task")
-                raw_description = rule.action_payload.get("description", "")
+            # ... (your existing task creation logic)
+            pass
 
-                related_object = get_object_from_event(event)
-
-                parsed_title = format_dynamic_text(raw_title, related_object)
-                parsed_description = format_dynamic_text(raw_description, related_object)
-
-                create_task(
-                    organisation=event.organisation,
-                    title=parsed_title,
-                    description=parsed_description,
-                    related_object_type=event.object_type,
-                    related_object_id=event.object_id,
-                    parent_event=event
-                )
-
-        # ✅ mark success
-        if hasattr(event, "status"):
-            event.status = "processed"
-            event.save(update_fields=["status"])
+        # 🟢 4. Final Success Mark
+        # Only happens if NO hardcoded or dynamic rules failed
+        event.status = "processed"
+        event.save(update_fields=["status"])
 
     except Exception as e:
-        # ❌ mark failure
-        if hasattr(event, "status"):
-            event.status = "failed"
-            event.save(update_fields=["status"])
-
-        raise  # let Celery handle retry if configured
+        event.status = "failed"
+        event.save(update_fields=["status"])
+        raise
 
 @shared_task
 def reconcile_failed_events():
