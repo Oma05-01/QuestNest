@@ -18,9 +18,11 @@ from .serializers import (
     CheckEmailSerializer, LoginSerializer, RegisterSerializer,
     UserSerializer, UserUpdateSerializer, QuestNestTokenSerializer
 )
-from accounts.models import User
 from operations.services.event_service import log_event
 from operations.constants import EventType
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 
 class CheckEmailView(APIView):
