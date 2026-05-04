@@ -32,17 +32,21 @@ class UserSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
+    role = serializers.CharField(required=False)
 
     class Meta:
         model = User
-        fields = ['email', 'name', 'password']
+        fields = ['email', 'name', 'password', 'role']
 
     def create(self, validated_data):
-        # We use create_user to ensure the password gets hashed!
+        # 🟢 6. Safely extract the role, defaulting to 'tenant' if not provided
+        role = validated_data.pop('role', 'tenant')
+
         user = User.objects.create_user(
             email=validated_data['email'],
             password=validated_data['password'],
-            name=validated_data['name']
+            name=validated_data['name'],
+            role=role  # 🟢 7. Pass the role to the user manager
         )
         return user
 
