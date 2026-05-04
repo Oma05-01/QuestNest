@@ -2,9 +2,7 @@ from rest_framework import serializers
 from leases.models import LeaseAgreement, LeaseClauseInstance, LeaseSignature
 from rentals.models import Tenancy
 
-
 class LeaseClauseInstanceSerializer(serializers.ModelSerializer):
-    # Pull the title from the template if you want it displayed as a header
     title = serializers.CharField(source='template.title', read_only=True)
 
     class Meta:
@@ -20,34 +18,43 @@ class LeaseSignatureSerializer(serializers.ModelSerializer):
 
 class LeaseSerializer(serializers.ModelSerializer):
     unit_name = serializers.CharField(source='tenancy.unit.name', read_only=True)
-    # Nest the clauses and signatures so the frontend can render the whole document
+    tenant_name = serializers.CharField(source='tenancy.tenant.name', read_only=True) # Good to have for UI
     clauses = LeaseClauseInstanceSerializer(many=True, read_only=True)
     signatures = LeaseSignatureSerializer(many=True, read_only=True)
+    escrow_id = serializers.SerializerMethodField()
+    escrow_status = serializers.SerializerMethodField()
 
     class Meta:
         model = LeaseAgreement
         fields = [
-            'id', 'unit_name', 'rent_amount', 'deposit_amount',
-            'start_date', 'end_date', 'status', 'clauses', 'signatures'
+            'id', 'unit_name', 'tenant_name', 'rent_amount', 'deposit_amount',
+            'start_date', 'end_date', 'status', 'clauses', 'signatures',
+            'escrow_id', 'escrow_status'
         ]
+
+    def get_escrow_id(self, obj):
+        # Find the escrow linked to this tenancy
+        from escrow.models import Escrow
+        escrow = Escrow.objects.filter(tenancy=obj.tenancy).first()
+        return escrow.id if escrow else None
+
+    def get_escrow_status(self, obj):
+        from escrow.models import Escrow
+        escrow = Escrow.objects.filter(tenancy=obj.tenancy).first()
+        return escrow.status if escrow else None
 
 
 class CreateLeaseSerializer(serializers.Serializer):
-    """
-    Because your service extracts all the data from the Tenancy,
-    the frontend only needs to pass the tenancy ID!
-    """
     tenancy_id = serializers.UUIDField()
 
     def validate_tenancy_id(self, value):
         user = self.context['request'].user
         try:
-            # We fetch the tenancy and ensure the person creating the lease 
-            # actually owns the property (or is an admin)
-            tenancy = Tenancy.objects.select_related('unit__asset').get(id=value)
+            tenancy = Tenancy.objects.select_related('unit__asset__organisation').get(id=value)
 
-            if user.role == 'landlord' and tenancy.unit.asset.owner != user:
-                raise serializers.ValidationError("You do not own this property.")
+            # 🟢 FIX: Check the Organisation, not the Owner!
+            if user.role in ['landlord', 'admin'] and tenancy.unit.asset.organisation != user.organisation:
+                raise serializers.ValidationError("You do not have permission to generate a lease for this property.")
 
             return tenancy
         except Tenancy.DoesNotExist:

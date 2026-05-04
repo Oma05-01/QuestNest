@@ -3,6 +3,8 @@ from decimal import Decimal
 from django.db import models, transaction
 from django.core.exceptions import ValidationError
 
+from organisations.models import Organisation
+
 
 class Wallet(models.Model):
     user = models.OneToOneField(
@@ -11,6 +13,30 @@ class Wallet(models.Model):
         related_name="wallet"
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    organisation = models.OneToOneField(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='wallet',
+        null=True,
+        blank=True
+    )
+
+    def __str__(self):
+        if self.organisation:
+            return f"{self.organisation.name}'s Wallet"
+        return f"{self.user.email}'s Wallet"
+
+    def clean(self):
+        # Validation: A wallet MUST have either a user or an organisation, but NOT both.
+        if self.user and self.organisation:
+            raise ValidationError("A wallet cannot belong to both a user and an organisation.")
+        if not self.user and not self.organisation:
+            raise ValidationError("A wallet must belong to either a user or an organisation.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
     @property
     def balance(self):
@@ -95,6 +121,9 @@ class WalletTransaction(models.Model):
     description = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.transaction_type.upper()} - ₦{self.amount} ({self.wallet})"
 
     class Meta:
         constraints = [

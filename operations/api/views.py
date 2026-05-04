@@ -2,10 +2,13 @@
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, filters, status
+from rest_framework.generics import get_object_or_404
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.views import APIView
+
 from operations.models import Event, Task
-from operations.api.serializers import EventSerializer, TaskSerializer
+from operations.api.serializers import EventSerializer, TaskSerializer, EventTraceSerializer
 from operations.tasks import process_event_rules_task
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -85,3 +88,18 @@ class TaskViewSet(viewsets.ReadOnlyModelViewSet):
         if hasattr(user, 'organisation'):
             return Task.objects.filter(organisation=user.organisation)
         return Task.objects.none()
+
+
+class EventTraceAPIView(APIView):
+    """
+    Returns a complete genealogy of an event:
+    Rules executed + Child events triggered.
+    """
+    def get(self, request, pk):
+        # We use select_related and prefetch_related to keep the DB hits low
+        event = get_object_or_404(
+            Event.objects.prefetch_related('rule_executions', 'child_events'),
+            pk=pk
+        )
+        serializer = EventTraceSerializer(event)
+        return Response(serializer.data)

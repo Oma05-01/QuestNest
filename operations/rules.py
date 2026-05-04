@@ -1,11 +1,16 @@
-from datetime import timedelta
+import time
+import logging
 import traceback
-
-from notifications.services.notification_service import trigger_notification
-from operations.models import Task, RuleExecution
+from datetime import timedelta
+from django.db import transaction
+from collections import defaultdict
 from operations.constants import EventType
 from operations.services.event_service import log_event
-from collections import defaultdict
+from operations.models import Task, RuleExecution
+from payments.models import Payment
+from django.core.cache import cache
+
+logger = logging.getLogger(__name__)
 
 def task_exists(organisation, title, related_object_type, related_object_id):
     return Task.objects.filter(
@@ -85,13 +90,28 @@ def execute_rules(event, visited=None):
         if rule_already_executed(event, rule_name):
             continue
 
+        start_time = time.perf_counter()
+
         # 5. OBSERVABILITY CATCHER
         try:
-            # We pass visited along in case rules call execute_rules directly
-            rule(event, visited=visited)
-            mark_rule_executed(event, rule_name)
+            with transaction.atomic():
+                # We pass visited along in case rules call execute_rules directly
+                rule(event, visited=visited)
+
+            end_time = time.perf_counter()
+
+            RuleExecution.objects.update_or_create(
+                event=event,
+                rule_name=rule_name,
+                defaults={
+                    'status': RuleExecution.SUCCESS,
+                    'execution_time': end_time - start_time,
+                    'error_message': None
+                }
+            )
 
         except Exception as e:
+            end_time = time.perf_counter()
             error_trace = traceback.format_exc()
 
             metadata = event.metadata or {}
@@ -102,8 +122,24 @@ def execute_rules(event, visited=None):
             event.status = "failed"
             event.save(update_fields=['metadata', 'status'])
 
+            RuleExecution.objects.update_or_create(
+                event=event,
+                rule_name=rule_name,
+                defaults={
+                    'status': RuleExecution.FAILED,
+                    'error_message': f"{str(e)}\n\n{error_trace}",
+                    'execution_time': end_time - start_time
+                }
+            )
+
+            logger.error(f"Rule {rule_name} failed on Event {event.id}: {str(e)}")
+
             # 🛑 CRITICAL: Stop the chain if a rule fails
             break
+
+    if event.status == "pending":
+        event.status = "processed"
+        event.save(update_fields=['status'])
 
 # ------------------------
 # Registered Rules
@@ -294,6 +330,29 @@ def mark_payment_success(event, visited=None):
         metadata={
             "payment_id": payment_id
         }
+    )
+
+@register_rule(EventType.PAYMENT_STATUS_CHANGED, priority=100)
+def notify_payment_failure(event, visited=None):
+    from notifications.services.notification_service import trigger_notification
+
+    payment = event.object
+
+    # Only act if the transition was to FAILED
+    if payment.status != Payment.FAILED:
+        return
+
+    # Extract the reason we saved in the webhook
+    reason = event.metadata.get("failure_reason", "The transaction was declined.")
+
+    trigger_notification(
+        user=payment.user,
+        organisation=payment.organisation,
+        title="Payment Failed",
+        message=f"Your payment of ₦{payment.amount} was unsuccessful. Reason: {reason}",
+        notification_type="error",
+        send_email=True,
+        metadata={"payment_id": str(payment.id), "error": reason}
     )
 
 @register_rule(EventType.ESCROW_FUNDED, priority=50)
@@ -683,6 +742,18 @@ def notify_payment_success(event, visited=None):
     payment = event.object
     user = payment.user
 
+    smart_metadata = {
+        "payment_id": str(payment.id),
+        "action": {
+            "type": "OPEN_MODAL",
+            "target": "PAYMENT_RECEIPT",
+            "params": {
+                "reference": payment.reference,
+                "amount": str(payment.amount)
+            }
+        }
+    }
+
     # One call handles DB storage + Email dispatch
     trigger_notification(
         user=user,
@@ -691,7 +762,7 @@ def notify_payment_success(event, visited=None):
         message=f"Your payment of ₦{payment.amount} (Ref: {payment.reference}) was received.",
         notification_type="success",
         send_email=True,
-        metadata={"payment_id": str(payment.id)}
+        metadata=smart_metadata
     )
 
 @register_rule(EventType.RENT_PAYMENT_DUE, priority=90)
@@ -723,3 +794,23 @@ def notify_late_fee(event, visited=None):
         notification_type="error",
         metadata={"tenancy_id": tenancy.id}
     )
+
+
+@register_rule(EventType.PAYMENT_SUCCESS, priority=100)
+def invalidate_landlord_dashboard_cache(event, visited=None):
+    """
+    BEST PRACTICE: A 'Silent' rule that never breaks the engine loop.
+    """
+    try:
+        payment = event.object
+        org_id = payment.organisation.id
+        cache_key = f"landlord_stats_{org_id}"
+
+        cache.delete(cache_key)
+        # Also clear the Admin/Global cache if needed
+        cache.delete("admin_system_stats")
+
+    except Exception as e:
+        # We log it so we know Redis is acting up,
+        # but we DO NOT raise the error.
+        logger.warning(f"Cache invalidation failed for Org {org_id}: {str(e)}")

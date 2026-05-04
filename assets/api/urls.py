@@ -1,14 +1,9 @@
 from django.urls import path
-from .views import AssetListView
-
-app_name = 'assets'
+from .views import AssetListCreateView, AssetDetailView, UnitListCreateView, UnitDetailView
 
 urlpatterns = [
-    # GET  /api/assets/ (Lists properties)
-    # POST /api/assets/ (Creates a new property)
-    path('', AssetListView.as_view(), name='asset-list'),
-
-    # NOTE: When you are ready to build the specific property view (PATCH/GET /api/assets/{id}/),
-    # it will go right here like this:
-    # path('<uuid:pk>/', AssetDetailView.as_view(), name='asset-detail'),
+    path('', AssetListCreateView.as_view(), name='asset-list-create'),
+    path('<uuid:pk>/', AssetDetailView.as_view(), name='asset-detail'),
+    path('<uuid:asset_id>/units/', UnitListCreateView.as_view(), name='unit-list-create'),
+    path('<uuid:asset_id>/units/<uuid:pk>/', UnitDetailView.as_view(), name='unit-detail'),
 ]

@@ -72,6 +72,7 @@ def trigger_notification(
                     "title": title,
                     "message": message,
                     "type": notification_type,
+                    "metadata": notification.metadata,  # for Deep Linking
                     "created_at": notification.created_at.strftime('%Y-%m-%d %H:%M:%S')
                 }
             }

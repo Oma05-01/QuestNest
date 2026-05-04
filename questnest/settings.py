@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+from datetime import timedelta
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-3s^0ra=_kxlt_lpt95z2z37(1%m1-(^kyhk(il62x-v$5=g(z!'
+SECRET_KEY = 'django-insecure-3s^0ra=_kxlt_lpt95z2z37(1%m1-(^Kyhk(il62x-v$5=g(z!'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -40,6 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'corsheaders',
     'rest_framework',
+    'drf_spectacular',
     'channels',
     'django_filters',
     'accounts',
@@ -52,6 +55,7 @@ INSTALLED_APPS = [
     'rentals',
     'user_messages',
     'escrow',
+    'maintenance',
     'core',
     'verification',
     'organisations',
@@ -167,15 +171,30 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',  # Remove this line when going to production!
-    ]
+    ],
+'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True, # Gives a new refresh token on every refresh
+    'BLACKLIST_AFTER_ROTATION': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'TOKEN_OBTAIN_SERIALIZER': 'accounts.serializers.QuestNestTokenSerializer',
+}
 
 STATIC_URL = 'static/'
 
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'omaesigbone10@gmail.com'
+EMAIL_HOST_PASSWORD = 'txze imrr jwvm lrzj'
+DEFAULT_FROM_EMAIL = 'QuestNest <no-reply@questnest.com>'
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
@@ -207,4 +226,31 @@ CHANNEL_LAYERS = {
     },
 }
 
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
+
 ASGI_APPLICATION = 'questnest.asgi.application'
+
+PAYSTACK_SECRET_KEY = "sk_test_fad755c96eb4a6d9da84303ac794b3aae8cee808"
+PAYSTACK_PUBLIC_KEY = "pk_test_61ca0a3adc7d8932267b68cdb4b84aa634f10693"
+
+# Optional: Set the currency
+PAYSTACK_CURRENCY = "NGN"
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'QuestNest API',
+    'DESCRIPTION': 'Core API for the QuestNest PropTech Platform',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    # This automatically detects your SimpleJWT setup so Swagger knows how to authenticate!
+    'SECURITY': [{'jwt': []}],
+}
+
+FRONTEND_URL = "http://localhost:5173"

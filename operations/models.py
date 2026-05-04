@@ -2,7 +2,6 @@ from django.db import models
 from django.conf import settings
 from organisations.models import Organisation
 from core.models import BaseModel
-from django.apps import apps
 from .constants import EventType
 
 class Event(BaseModel):
@@ -27,10 +26,10 @@ class Event(BaseModel):
         related_name="child_events"
     )
 
-    event_type = models.CharField(max_length=100)
+    event_type = models.CharField(max_length=100, db_index=True)
 
     object_type = models.CharField(max_length=100)
-    object_id = models.CharField(max_length=255, null=True, blank=True)
+    object_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
 
     metadata = models.JSONField(default=dict, blank=True)
 
@@ -41,7 +40,8 @@ class Event(BaseModel):
             ("pending", "Pending"),
             ("processed", "Processed"),
             ("failed", "Failed"),
-        ]
+        ],
+        db_index=True
     )
 
     def __str__(self):
@@ -138,15 +138,34 @@ class EventRule(BaseModel):
 
 class RuleExecution(models.Model):
 
+    SUCCESS = "success"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+    STATUS_CHOICES = [
+        (SUCCESS, "Success"),
+        (FAILED, "Failed"),
+        (SKIPPED, "Skipped"),
+    ]
+
     event = models.ForeignKey(
         "operations.Event",
         on_delete=models.CASCADE,
         related_name="rule_executions"
     )
 
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=SUCCESS)
+    error_message = models.TextField(null=True, blank=True)
+    execution_time = models.FloatField(null=True, help_text="Time taken in seconds")
+
     rule_name = models.CharField(max_length=255)
 
     executed_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, blank=True, null=True)
 
     class Meta:
         unique_together = ("event", "rule_name")
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.rule_name} on Event {self.event_id} - {self.status}"

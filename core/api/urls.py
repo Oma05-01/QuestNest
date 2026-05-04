@@ -14,4 +14,6 @@ urlpatterns = [
     path("verification/", include("verification.api.urls")),
     path("messages/", include("user_messages.api.urls")),
     path("dashboard/", include("dashboards.api.urls")),
+    path("maintenance/", include("maintenance.api.urls")),
+
 ]

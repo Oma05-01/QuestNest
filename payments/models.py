@@ -42,18 +42,26 @@ class Payment(LifecycleMixin, models.Model):
         on_delete=models.CASCADE,
         related_name="payments", null=True, blank=True
     )
-    created_at = models.DateTimeField(auto_now_add=True, blank=True, null=True)
-    reference = models.CharField(max_length=255, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True, blank=True, null=True, db_index=True)
+    reference = models.CharField(max_length=255, unique=True, db_index=True) # 🟢 Add db_index
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default=INITIATED
-    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=INITIATED, db_index=True) # 🟢 Index common filters
     metadata = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
         return f"Payment of {self.amount} by {self.user.email} | {self.reference} - {self.status}"
+
+    def change_status(self, new_status):
+        """
+        Safely transition payment states.
+        Raises ValueError if the move is illegal.
+        """
+        allowed = self.ALLOWED_TRANSITIONS.get(self.status, [])
+        if new_status not in allowed:
+            raise ValueError(f"Invalid transition from {self.status} to {new_status}")
+
+        self.status = new_status
+        self.save(update_fields=['status'])
 
 
 class EscrowActionLog(models.Model):

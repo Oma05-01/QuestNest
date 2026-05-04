@@ -15,3 +15,7 @@ class OrganisationSerializer(serializers.ModelSerializer):
         user = self.context['request'].user
         membership = obj.members.filter(user=user, is_active=True).first()
         return membership.role if membership else None
+
+
+class CreateOrganisationSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255)
