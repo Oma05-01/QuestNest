@@ -11,8 +11,8 @@ urlpatterns = [
 
     # Api Gateway
     path("api/", include("core.api.urls")),
-    path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    # path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     path('admin/', admin.site.urls),
 

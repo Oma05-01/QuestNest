@@ -69,6 +69,12 @@ class LoginView(APIView):
         if not user:
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
+        if not user.is_verified:  # (Assuming you have an is_verified boolean on your User model)
+            return Response(
+                {"detail": "Please verify your email address before logging in."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         # Generate JWT Tokens manually
         refresh = QuestNestTokenSerializer.get_token(user)
 
