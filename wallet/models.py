@@ -8,11 +8,12 @@ from organisations.models import Organisation
 
 class Wallet(models.Model):
     user = models.OneToOneField(
-        "accounts.User",  # Using string to avoid circular imports
+        "accounts.User",
         on_delete=models.CASCADE,
-        related_name="wallet"
+        related_name="wallet",
+        null=True,  # 🟢 ADDED: DB must allow this to be empty!
+        blank=True  # 🟢 ADDED: Forms must allow this to be empty!
     )
-    created_at = models.DateTimeField(auto_now_add=True)
 
     organisation = models.OneToOneField(
         Organisation,
@@ -22,16 +23,19 @@ class Wallet(models.Model):
         blank=True
     )
 
+    created_at = models.DateTimeField(auto_now_add=True)
+
     def __str__(self):
-        if self.organisation:
+        if self.organisation_id:
             return f"{self.organisation.name}'s Wallet"
         return f"{self.user.email}'s Wallet"
 
     def clean(self):
-        # Validation: A wallet MUST have either a user or an organisation, but NOT both.
-        if self.user and self.organisation:
+        # 🟢 FIXED: Removed nested function and used _id consistently
+        if self.user_id and self.organisation_id:
             raise ValidationError("A wallet cannot belong to both a user and an organisation.")
-        if not self.user and not self.organisation:
+
+        if not self.user_id and not self.organisation_id:
             raise ValidationError("A wallet must belong to either a user or an organisation.")
 
     def save(self, *args, **kwargs):
@@ -41,13 +45,13 @@ class Wallet(models.Model):
     @property
     def balance(self):
         from django.db.models import Sum
-        # Ensure we return Decimal 0.00 instead of 0 for mathematical consistency
+
         credits = self.transactions.filter(
-            transaction_type="credit"
+            transaction_type=WalletTransaction.CREDIT  # 🟢 Minor fix: use the class constant
         ).aggregate(Sum("amount"))["amount__sum"] or Decimal("0.00")
 
         debits = self.transactions.filter(
-            transaction_type="debit"
+            transaction_type=WalletTransaction.DEBIT  # 🟢 Minor fix: use the class constant
         ).aggregate(Sum("amount"))["amount__sum"] or Decimal("0.00")
 
         return Decimal(credits) - Decimal(debits)
@@ -58,8 +62,6 @@ class Wallet(models.Model):
             return self.balance >= Decimal(str(amount))
 
     def deposit(self, amount, reference=None, description="Deposit"):
-        """Creates a credit transaction to increase balance."""
-        from wallet.models import WalletTransaction
 
         return WalletTransaction.objects.create(
             wallet=self,
@@ -73,7 +75,6 @@ class Wallet(models.Model):
         amount_dec = Decimal(str(amount))
 
         with transaction.atomic():
-            # Lock the row before checking balance and creating the transaction
             _ = Wallet.objects.select_for_update().get(id=self.id)
 
             if self.balance < amount_dec:
@@ -87,8 +88,8 @@ class Wallet(models.Model):
                 description=description
             )
 
-class WalletTransaction(models.Model):
 
+class WalletTransaction(models.Model):
     CREDIT = "credit"
     DEBIT = "debit"
 
@@ -103,23 +104,10 @@ class WalletTransaction(models.Model):
         related_name="transactions"
     )
 
-    amount = models.DecimalField(
-        max_digits=12,
-        decimal_places=2
-    )
-
-    transaction_type = models.CharField(
-        max_length=10,
-        choices=TYPE_CHOICES
-    )
-
-    reference = models.CharField(
-        max_length=255,
-        unique=True
-    )
-
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    transaction_type = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    reference = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -127,8 +115,9 @@ class WalletTransaction(models.Model):
 
     class Meta:
         constraints = [
+            # 🟢 FIXED: Amount must be strictly greater than zero to prevent negative debits
             models.CheckConstraint(
-                condition=~models.Q(amount=0),
-                name="amount_not_zero"
+                condition=models.Q(amount__gt=0),
+                name="amount_must_be_positive"
             )
         ]
