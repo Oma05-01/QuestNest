@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'channels',
     'django_filters',
+    'anymail',
     
     # Your Apps
     'accounts',
@@ -161,13 +162,19 @@ SIMPLE_JWT = {
 }
 
 # 🟢 NEW: Dynamic Email Setup
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='omaesigbone10@gmail.com')
-EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
-DEFAULT_FROM_EMAIL = 'QuestNest <no-reply@questnest.com>'
+EMAIL_BACKEND = 'anymail.backends.resend.EmailBackend'
+
+ANYMAIL = {
+    "RESEND_API_KEY": env('RESEND_API_KEY'),
+}
+
+# EMAIL_HOST = 'smtp.gmail.com'
+# EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='omaesigbone10@gmail.com')
+# EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = 'onboarding@resend.dev'
+# EMAIL_TIMEOUT = 10
 
 # 🟢 NEW: Dynamic Redis/Celery Setup
 REDIS_URL = env('REDIS_URL', default='redis://localhost:6379/0')
