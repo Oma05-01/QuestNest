@@ -16,7 +16,7 @@ from rest_framework import serializers
 
 from .serializers import (
     CheckEmailSerializer, LoginSerializer, RegisterSerializer,
-    UserSerializer, UserUpdateSerializer, QuestNestTokenSerializer
+    UserSerializer, UserUpdateSerializer, QuestNestTokenSerializer, ResendVerificationSerializer
 )
 from operations.services.event_service import log_event
 from operations.constants import EventType
@@ -175,3 +175,58 @@ class VerifyEmailView(APIView):
             return Response({"message": "Email successfully verified."}, status=status.HTTP_200_OK)
 
         return Response({"detail": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ResendVerificationEmailView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        summary="Resend Verification Email",
+        request=ResendVerificationSerializer,
+        responses={
+            200: inline_serializer(name='ResendResponse', fields={'message': serializers.CharField()}),
+            400: inline_serializer(name='ResendError', fields={'detail': serializers.CharField()})
+        }
+    )
+    def post(self, request):
+        serializer = ResendVerificationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email'].lower()
+
+        # Step 1: Check if the user exists
+        user = User.objects.filter(email=email).first()
+
+        if not user:
+            # 🛡️ SECURITY BEST PRACTICE:
+            # We return a success message even if the user doesn't exist.
+            # This prevents malicious bots from using this endpoint to guess valid emails.
+            return Response(
+                {"message": "If an account with that email exists, a verification link has been sent."},
+                status=status.HTTP_200_OK
+            )
+
+        # Step 2: Check if they are already verified
+        if user.is_verified:
+            return Response(
+                {"detail": "This account is already verified. Please log in."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Step 3: Trigger the email send
+        token = default_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        verification_link = f"{frontend_url}/verify/{uid}/{token}"
+
+        send_mail(
+            subject="Verify your QuestNest account",
+            message=f"Welcome to QuestNest! Click the link below to verify your email:\n\n{verification_link}",
+            from_email=settings.EMAIL_HOST_USER,  # Using the fix from earlier!
+            recipient_list=[user.email],
+        )
+
+        return Response(
+            {"message": "If an account with that email exists, a verification link has been sent."},
+            status=status.HTTP_200_OK
+        )

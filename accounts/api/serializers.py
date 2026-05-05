@@ -54,3 +54,6 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['name', 'email']
+
+class ResendVerificationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
