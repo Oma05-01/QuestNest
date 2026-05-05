@@ -38,7 +38,7 @@ def get_landlord_dashboard_data(user):
 
     # 🟢 OPTIMIZATION: We don't need the whole Unit object, just the stats.
     # Aggregates stay as they are—they are already DB-level efficient.
-    stats = Unit.objects.filter(organisation=org).aggregate(
+    stats = Unit.objects.filter(asset__organisation=org).aggregate(
         total_units=Count('id'),
         occupied=Count('id', filter=Q(status='occupied')),
         vacant=Count('id', filter=Q(status='vacant'))

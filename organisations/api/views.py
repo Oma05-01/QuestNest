@@ -35,11 +35,16 @@ class MyOrganisationsView(APIView):
             )
 
             # 2. Immediately make the creator the OWNER
+            # (This is great for future-proofing when you add staff members)
             Membership.objects.create(
                 user=request.user,
                 organisation=organisation,
                 role=Membership.OWNER
             )
+
+            # 3. 🟢 THE FIX: Update the user's primary organisation field!
+            request.user.organisation = organisation
+            request.user.save()
 
         # Return the newly created org (pass the request context so 'my_role' resolves correctly)
         return Response(
