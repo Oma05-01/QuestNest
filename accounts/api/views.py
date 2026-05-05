@@ -110,7 +110,7 @@ class RegisterView(APIView):
         send_mail(
             subject="Verify your QuestNest account",
             message=f"Welcome to QuestNest! Click the link below to verify your email:\n\n{verification_link}",
-            from_email="no-reply@questnest.com",
+            from_email=settings.EMAIL_HOST_USER,
             recipient_list=[user.email],
         )
 
