@@ -1,7 +1,6 @@
-# maintenance/models.py
 from django.db import models
 from core.models import BaseModel
-from organisations.models import Organisation, Workspace
+from workspaces.models import Workspace  # 🟢 Updated import
 from rentals.models import Unit
 
 
@@ -25,9 +24,18 @@ class MaintenanceRequest(BaseModel):
         (RESOLVED, 'Resolved'), (CLOSED, 'Closed'),
     ]
 
-    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE)
-    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, null=True)
+    # 🟢 CHANGED: Replaced organisation entirely with workspace
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name="maintenance_requests",
+        null=True,
+        blank=True
+    )
+
     unit = models.ForeignKey(Unit, on_delete=models.CASCADE, related_name='maintenance_requests')
+
+    # 🟢 KEPT: The human experiencing the issue
     tenant = models.ForeignKey('accounts.User', on_delete=models.CASCADE, related_name='reported_issues')
 
     title = models.CharField(max_length=255)
@@ -35,11 +43,17 @@ class MaintenanceRequest(BaseModel):
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=MEDIUM)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=OPEN)
 
-    # Optional: For tracking repair costs later
     estimated_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     def __str__(self):
         return f"{self.title} - {self.unit.name} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        # 🟢 ADDED: Auto-assign the workspace based on the unit to prevent data leaks
+        if not self.workspace_id and self.unit:
+            self.workspace = self.unit.workspace
+        super().save(*args, **kwargs)
+
 
 class MaintenanceImage(BaseModel):
     request = models.ForeignKey(
@@ -47,16 +61,14 @@ class MaintenanceImage(BaseModel):
         related_name='images',
         on_delete=models.CASCADE
     )
-    # Using a simple FileField/ImageField.
-    # In production, this points to your S3 bucket or Cloudinary.
     image = models.ImageField(upload_to='maintenance/requests/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Image for {self.request.title}"
 
+
 class Vendor(BaseModel):
-    # Categories for easy filtering
     PLUMBING = 'plumbing'
     ELECTRICAL = 'electrical'
     CARPENTRY = 'carpentry'
@@ -68,7 +80,13 @@ class Vendor(BaseModel):
         (CARPENTRY, 'Carpentry'), (CLEANING, 'Cleaning'), (GENERAL, 'General'),
     ]
 
-    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE)
+    # 🟢 CHANGED: Vendors belong to a specific Property Management Workspace's rolodex
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name="vendors"
+    )
+
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default=GENERAL)
     phone = models.CharField(max_length=20)
@@ -76,6 +94,7 @@ class Vendor(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.category})"
+
 
 class MaintenanceAssignment(BaseModel):
     request = models.ForeignKey(MaintenanceRequest, on_delete=models.CASCADE, related_name='assignments')
@@ -88,17 +107,19 @@ class MaintenanceAssignment(BaseModel):
     def __str__(self):
         return f"{self.vendor.name} assigned to {self.request.title}"
 
+
 class MaintenanceComment(BaseModel):
     request = models.ForeignKey(
         MaintenanceRequest,
         on_delete=models.CASCADE,
         related_name='comments'
     )
+    # 🟢 KEPT: Humans write comments.
     author = models.ForeignKey('accounts.User', on_delete=models.CASCADE)
     body = models.TextField()
 
     class Meta:
-        ordering = ['created_at'] # Oldest first for a natural chat flow
+        ordering = ['created_at']
 
     def __str__(self):
         return f"Comment by {self.author.email} on {self.request.title}"

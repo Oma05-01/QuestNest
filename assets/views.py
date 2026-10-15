@@ -4,7 +4,7 @@ from .forms import AssetsForm
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.http import HttpResponseForbidden
-from organisations.models import Membership
+from workspaces.models import Membership
 from operations.services.event_service import log_event
 from operations.constants import EventType
 from core.api.permissions import membership_required, operator_required

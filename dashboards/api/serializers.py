@@ -1,4 +1,3 @@
-# serializers.py for dashboards api
 from rest_framework import serializers
 from operations.models import Event
 from rentals.models import Tenancy
@@ -9,7 +8,8 @@ class EventListSerializer(serializers.ModelSerializer):
     """
     A lightweight serializer for populating dashboard activity tables.
     """
-    organisation_name = serializers.CharField(source='organisation.name', read_only=True)
+    # 🟢 CHANGED: organisation -> workspace
+    workspace_name = serializers.CharField(source='workspace.name', read_only=True)
     actor_email = serializers.CharField(source='actor.email', read_only=True, allow_null=True)
 
     class Meta:
@@ -18,15 +18,16 @@ class EventListSerializer(serializers.ModelSerializer):
             'id',
             'event_type',
             'status',
-            'organisation_name',
+            'workspace_name', # 🟢 CHANGED
             'actor_email',
             'created_at'
         ]
 
 
-class LandlordTenancyListSerializer(serializers.ModelSerializer):
-    # Flatten the data so the frontend doesn't have to parse deep objects
-    tenant_name = serializers.CharField(source='tenant.get_full_name', read_only=True)
+# 🟢 RENAMED: Replaced 'Landlord' with 'Workspace'
+class WorkspaceTenancyListSerializer(serializers.ModelSerializer):
+    # 🟢 CHANGED: Updated to use the new `tenant.name` field from the User model
+    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
     tenant_email = serializers.CharField(source='tenant.email', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
 
@@ -51,10 +52,13 @@ class LandlordTenancyListSerializer(serializers.ModelSerializer):
 
     def get_outstanding_balance(self, obj):
         # Uses the model method you likely already have
-        return obj.get_outstanding_balance()
+        if hasattr(obj, 'get_outstanding_balance'):
+            return obj.get_outstanding_balance()
+        return 0.00
 
 
-class TenantPaymentHistorySerializer(serializers.ModelSerializer):
+# 🟢 RENAMED: This can now be used for BOTH Tenants and Property Managers!
+class PaymentHistorySerializer(serializers.ModelSerializer):
     # Traverse the relationships to get the human-readable unit name
     unit_name = serializers.CharField(source='tenancy.unit.name', read_only=True, default="Unassigned")
     description = serializers.SerializerMethodField()

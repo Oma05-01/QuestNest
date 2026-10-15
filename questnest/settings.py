@@ -3,7 +3,7 @@ from datetime import timedelta
 import os
 import environ
 import dj_database_url
-
+from corsheaders.defaults import default_headers
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -31,8 +31,9 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'channels',
     'django_filters',
+    'django_extensions',
     'anymail',
-    
+    'rest_framework_simplejwt.token_blacklist',
     # Your Apps
     'accounts',
     'dashboards',
@@ -47,7 +48,7 @@ INSTALLED_APPS = [
     'maintenance',
     'core',
     'verification',
-    'organisations',
+    'workspaces',
     'notifications',
     
     # Auth
@@ -67,7 +68,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'allauth.account.middleware.AccountMiddleware',
-    'organisations.middleware.OrganisationMiddleware',
+    'workspaces.middleware.WorkspaceMiddleware',
     'verification.middleware.VerifiedEntityMiddleware',
     'accounts.middleware.LoginRequiredMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -183,8 +184,8 @@ CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 5 * 60
-CELERY_TASK_SOFT_TIME_LIMIT = 4 * 60
+CELERY_TASK_TIME_LIMIT = 300
+CELERY_TASK_SOFT_TIME_LIMIT = 240
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
@@ -203,12 +204,16 @@ CACHES = {
         "LOCATION": env('REDIS_URL', default='redis://127.0.0.1:6379/1'),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "IGNORE_EXCEPTIONS": True,
         }
     }
 }
 
 # 🟢 NEW: Dynamic Allowed Origins & Paystack
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=["http://localhost:5173"])
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-workspace-id",
+]
 FRONTEND_URL = env('FRONTEND_URL', default="http://localhost:5173")
 
 PAYSTACK_SECRET_KEY = env('PAYSTACK_SECRET_KEY', default="sk_test_####################################")

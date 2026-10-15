@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 def create_notification(
     *,
     user,
-    organisation=None,
+    workspace=None,  # 🟢 CHANGED: Replaced organisation
     title,
     message,
     notification_type="info",
@@ -19,8 +19,10 @@ def create_notification(
 
     metadata = metadata or {}
 
+    # 🟢 CHANGED: Added workspace to the uniqueness check
     existing = Notification.objects.filter(
         user=user,
+        workspace=workspace,
         title=title,
         metadata=metadata
     ).first()
@@ -30,7 +32,7 @@ def create_notification(
 
     return Notification.objects.create(
         user=user,
-        organisation=organisation,
+        workspace=workspace,  # 🟢 CHANGED
         title=title,
         message=message,
         notification_type=notification_type,
@@ -42,7 +44,7 @@ def trigger_notification(
         user,
         title,
         message,
-        organisation=None,
+        workspace=None,  # 🟢 CHANGED: Replaced organisation
         notification_type="info",
         send_email=True,
         send_sms=False,
@@ -51,14 +53,14 @@ def trigger_notification(
     # 1. Store in DB (The "Source of Truth")
     notification = create_notification(
         user=user,
-        organisation=organisation or getattr(user, 'organisation', None),
+        workspace=workspace, # 🟢 CHANGED: Removed the old getattr(user, 'organisation') fallback
         title=title,
         message=message,
         notification_type=notification_type,
         metadata=metadata
     )
 
-    # 2. WebSocket Push (The "Failsafe" Real-Time Layer) 🟢
+    # 2. WebSocket Push (The "Failsafe" Real-Time Layer)
     try:
         channel_layer = get_channel_layer()
         group_name = f"user_{user.id}"
@@ -66,21 +68,19 @@ def trigger_notification(
         async_to_sync(channel_layer.group_send)(
             group_name,
             {
-                "type": "send_notification",  # Matches consumer method
+                "type": "send_notification",
                 "message": {
                     "id": notification.id,
+                    "workspace_id": str(workspace.id) if workspace else None, # 🟢 NEW: Tell the frontend the context!
                     "title": title,
                     "message": message,
                     "type": notification_type,
-                    "metadata": notification.metadata,  # for Deep Linking
+                    "metadata": notification.metadata,
                     "created_at": notification.created_at.strftime('%Y-%m-%d %H:%M:%S')
                 }
             }
         )
     except Exception as e:
-        # 🛡️ GRACEFUL DEGRADATION:
-        # If Redis is down, we log it but DON'T stop the function.
-        # The user still gets their rent paid and the DB entry exists.
         logger.error(f"Real-time notification failed for user {user.id}: {e}")
 
     # 3. External Delivery: Email
@@ -94,7 +94,6 @@ def trigger_notification(
                 fail_silently=True,
             )
         except Exception as e:
-            # In production, log this to Sentry or similar
-            print(f"Email failed: {e}")
+            logger.error(f"Email failed to send to {user.email}: {e}")
 
     return notification

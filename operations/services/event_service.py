@@ -3,7 +3,7 @@ from operations.tasks import process_event_rules_task
 
 def log_event(
     *,
-    organisation,
+    workspace, # 🟢 CHANGED: Replaced organisation
     actor=None,
     event_type,
     object_type=None,
@@ -16,7 +16,7 @@ def log_event(
     """
     # 1️⃣ Create the event (Fast)
     event = Event.objects.create(
-        organisation=organisation,
+        workspace=workspace, # 🟢 CHANGED
         actor=actor,
         event_type=event_type,
         object_type=object_type,
@@ -26,7 +26,6 @@ def log_event(
     )
 
     # 2️⃣ Hand off to Celery / Memurai (Instant)
-    # Do NOT execute rules here!
     process_event_rules_task.delay(event.id)
 
     return event

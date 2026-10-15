@@ -5,21 +5,23 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
 
-from organisations.models import Organisation
+from workspaces.models import Workspace
 from assets.models import Assets
-from core.api.permissions import IsLandlordOrAdmin  # Assuming only landlords/admins verify things
+# 🟢 UPDATED: Using our new context-aware permissions
+from core.api.permissions import IsBusinessWorkspace, BelongsToWorkspace
 from verification.services.verification_service import (
-    submit_organisation_verification,
-    submit_property_verification
+    submit_workspace_verification,
+    submit_asset_verification
 )
 from .serializers import SubmitVerificationSerializer
 
 
 class SubmitVerificationView(APIView):
-    """ POST /api/verification/submit/ """
-    permission_classes = [IsAuthenticated, IsLandlordOrAdmin]
-
-    # CRITICAL: These parsers tell Django to accept file uploads (form-data) instead of JSON
+    """
+    POST /api/verification/submit/
+    Only Business Workspaces can submit verification documents.
+    """
+    permission_classes = [IsAuthenticated, IsBusinessWorkspace]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
@@ -30,20 +32,34 @@ class SubmitVerificationView(APIView):
         target_id = serializer.validated_data['target_id']
         documents = serializer.validated_data['documents']
 
-        if target_type == 'organisation':
-            org = get_object_or_404(Organisation, id=target_id, members__user=request.user)
-            submit_organisation_verification(
-                organisation=org,
-                document_file=documents[0],  # Org verification only takes 1 file in your model
-                submitter=request.user
-            )
-            return Response({"message": "Organisation documents submitted for review."})
+        # 🟢 CASE 1: Verifying the Business Entity itself
+        if target_type == 'workspace':
+            # Ensure the target workspace is the one the user is currently acting in
+            workspace = get_object_or_404(Workspace, id=target_id)
 
-        elif target_type == 'property':
-            asset = get_object_or_404(Assets, id=target_id, owner=request.user)
-            submit_property_verification(
-                asset=asset,
-                document_files=documents,  # Property verification takes multiple files
+            if workspace != request.workspace:
+                return Response(
+                    {"error": "You can only verify your active business workspace."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            submit_workspace_verification(
+                workspace=workspace,
+                document_file=documents[0],
                 submitter=request.user
             )
-            return Response({"message": "Property documents submitted for review."})
+            return Response({"message": "Workspace identity documents submitted for review."})
+
+        # 🟢 CASE 2: Verifying a Specific Building/Asset
+        elif target_type == 'asset':
+            # Ensure the asset belongs to the active workspace context
+            asset = get_object_or_404(Assets, id=target_id, workspace=request.workspace)
+
+            submit_asset_verification(
+                asset=asset,
+                document_files=documents,
+                submitter=request.user
+            )
+            return Response({"message": "Property ownership documents submitted for review."})
+
+        return Response({"error": "Invalid target type."}, status=status.HTTP_400_BAD_REQUEST)

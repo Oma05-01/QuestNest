@@ -1,71 +1,76 @@
-# maintenance/api/views.py
-from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-
-from wallet.models import Wallet, WalletTransaction
-from .serializers import MaintenanceSerializer, VendorSerializer, MaintenanceAssignmentSerializer, \
-    MaintenanceCommentSerializer
-from ..models import MaintenanceRequest, MaintenanceImage, MaintenanceAssignment, Vendor
 from rest_framework.parsers import MultiPartParser, FormParser
 
+from wallet.models import Wallet, WalletTransaction
+from core.api.permissions import IsWorkspaceMember, IsBusinessWorkspace, BelongsToWorkspace
+from .serializers import (
+    MaintenanceSerializer, VendorSerializer,
+    MaintenanceAssignmentSerializer, MaintenanceCommentSerializer
+)
+from ..models import MaintenanceRequest, MaintenanceImage, MaintenanceAssignment, Vendor
+
+
 class MaintenanceListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsWorkspaceMember]
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
-        if request.user.role == 'tenant':
-            requests = MaintenanceRequest.objects.filter(tenant=request.user)
+        # 🟢 Filter based on the active workspace context
+        if request.workspace.workspace_type == 'business':
+            # Managers see all requests for their workspace
+            requests = MaintenanceRequest.objects.filter(workspace=request.workspace)
         else:
-            requests = MaintenanceRequest.objects.filter(organisation=request.user.organisation)
+            # Tenants see requests they personally submitted
+            requests = MaintenanceRequest.objects.filter(tenant=request.user)
 
-        # Serialize and return (omitting serializer code for brevity)
         return Response(MaintenanceSerializer(requests, many=True).data)
 
     def post(self, request):
         serializer = MaintenanceSerializer(data=request.data)
-
         if serializer.is_valid():
-            # 1. Save the main request
+            # 🟢 INFERENCE: Get the unit to find out which business workspace owns it
+            unit = serializer.validated_data.get('unit')
+
             maintenance_request = serializer.save(
                 tenant=request.user,
-                organisation=request.user.organisation if request.user.role != 'tenant' else request.data.get(
-                    'unit_org'),
-                unit_id=request.data.get('unit')
+                workspace=unit.workspace,  # Auto-routed to the correct manager!
             )
 
-            # 2. Handle multiple images
+            # Handle image uploads
             images = request.FILES.getlist('images')
             for image in images:
                 MaintenanceImage.objects.create(request=maintenance_request, image=image)
 
-            return Response(MaintenanceSerializer(maintenance_request).data, status=201)
+            return Response(MaintenanceSerializer(maintenance_request).data, status=status.HTTP_201_CREATED)
 
-        return Response(serializer.errors, status=400)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class VendorListView(generics.ListCreateAPIView):
-    """ GET /api/maintenance/vendors/ & POST """
+    """ GET/POST /api/maintenance/vendors/ """
     serializer_class = VendorSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsBusinessWorkspace]
 
     def get_queryset(self):
-        # Multi-tenant security
-        return Vendor.objects.filter(organisation=self.request.user.organisation)
+        # Vendors are scoped to the business workspace
+        return Vendor.objects.filter(workspace=self.request.workspace)
 
     def perform_create(self, serializer):
-        serializer.save(organisation=self.request.user.organisation)
+        serializer.save(workspace=self.request.workspace)
 
 
 class AssignVendorView(APIView):
     """ POST /api/maintenance/requests/<pk>/assign/ """
+    permission_classes = [IsAuthenticated, IsBusinessWorkspace, BelongsToWorkspace]
 
     def post(self, request, pk):
-        m_request = get_object_or_404(MaintenanceRequest, pk=pk, organisation=request.user.organisation)
+        # BelongsToWorkspace ensures the manager owns this request
+        m_request = get_object_or_404(MaintenanceRequest, pk=pk, workspace=request.workspace)
         vendor_id = request.data.get('vendor_id')
 
         assignment = MaintenanceAssignment.objects.create(
@@ -74,33 +79,98 @@ class AssignVendorView(APIView):
             notes=request.data.get('notes', '')
         )
 
-        # Automatically bump the request status to "In Progress"
         m_request.status = MaintenanceRequest.IN_PROGRESS
         m_request.save()
 
-        return Response(MaintenanceAssignmentSerializer(assignment).data, status=201)
+        return Response(MaintenanceAssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED)
+
+
+class ApproveAndPayVendorView(APIView):
+    """ POST /api/maintenance/requests/<pk>/pay/ """
+    permission_classes = [IsAuthenticated, IsBusinessWorkspace, BelongsToWorkspace]
+
+    def post(self, request, pk):
+        with transaction.atomic():
+            # 1. Lock the request for update
+            m_request = get_object_or_404(
+                MaintenanceRequest.objects.select_for_update(),
+                pk=pk,
+                workspace=request.workspace
+            )
+
+            assignment = m_request.assignments.last()
+            if not assignment:
+                return Response({"error": "No vendor assigned."}, status=status.HTTP_400_BAD_REQUEST)
+
+            cost = request.data.get('cost')
+            if not cost or float(cost) <= 0:
+                return Response({"error": "Valid cost required."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # 2. Debit the Business Workspace Wallet
+            # 🟢 CHANGED: Pointing to workspace instead of organisation
+            workspace_wallet = Wallet.objects.select_for_update().get(workspace=request.workspace)
+
+            if workspace_wallet.balance < float(cost):
+                return Response({"error": "Insufficient workspace funds."}, status=status.HTTP_400_BAD_REQUEST)
+
+            WalletTransaction.objects.create(
+                wallet=workspace_wallet,
+                amount=cost,
+                transaction_type='debit',
+                description=f"Maintenance Payout: {m_request.title}",
+                reference=f"MNT-{m_request.id.hex[:6]}"
+            )
+
+            # 3. Credit the Vendor's Personal Wallet
+            # (Assuming vendor email links to a User record)
+            vendor_user = assignment.vendor.linked_user  # Recommended addition to Vendor model
+            vendor_wallet, _ = Wallet.objects.get_or_create(user=vendor_user)
+
+            WalletTransaction.objects.create(
+                wallet=vendor_wallet,
+                amount=cost,
+                transaction_type='credit',
+                description=f"Work Order Payment: {m_request.title}"
+            )
+
+            # 4. Finalize
+            assignment.cost = cost
+            assignment.save()
+            m_request.status = MaintenanceRequest.CLOSED
+            m_request.save()
+
+            return Response({"message": "Vendor paid and request closed."})
 
 
 class MaintenanceCommentView(APIView):
     """ GET /api/maintenance/requests/<pk>/comments/ & POST """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsWorkspaceMember]
 
     def get(self, request, pk):
-        m_request = get_object_or_404(MaintenanceRequest, pk=pk)
-        # Ensure the user has access to this request's org
-        if request.user.role != 'tenant' and m_request.organisation != request.user.organisation:
-            return Response(status=403)
+        # 🟢 Security: Ensure the user has access to the request's context
+        if request.workspace.workspace_type == 'business':
+            m_request = get_object_or_404(MaintenanceRequest, pk=pk, workspace=request.workspace)
+        else:
+            m_request = get_object_or_404(MaintenanceRequest, pk=pk, tenant=request.user)
 
-        comments = m_request.comments.all()
-        return Response(MaintenanceCommentSerializer(comments, many=True, context={'request': request}).data)
+        comments = m_request.comments.all().order_by('created_at')
+        serializer = MaintenanceCommentSerializer(comments, many=True, context={'request': request})
+        return Response(serializer.data)
 
     def post(self, request, pk):
-        m_request = get_object_or_404(MaintenanceRequest, pk=pk)
-        serializer = MaintenanceCommentSerializer(data=request.data)
+        # 🟢 Authorization: Must be part of the request context to comment
+        if request.workspace.workspace_type == 'business':
+            m_request = get_object_or_404(MaintenanceRequest, pk=pk, workspace=request.workspace)
+        else:
+            m_request = get_object_or_404(MaintenanceRequest, pk=pk, tenant=request.user)
+
+        serializer = MaintenanceCommentSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
+            # Automatically set the author and the request
             serializer.save(author=request.user, request=m_request)
-            return Response(serializer.data, status=201)
-        return Response(serializer.errors, status=400)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class VendorAssignmentListView(APIView):
@@ -108,92 +178,18 @@ class VendorAssignmentListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # We assume the Vendor is a User in the system with a specific role
-        # or linked to a Vendor object.
+        """
+        Returns jobs assigned to the current user's email.
+        Note: We don't use 'request.workspace' here because the vendor
+        is acting as an external service provider.
+        """
         assignments = MaintenanceAssignment.objects.filter(
             vendor__email=request.user.email
-        ).select_related('request', 'request__unit')
+        ).select_related(
+            'request',
+            'request__unit',
+            'request__unit__asset'
+        ).order_by('-assigned_at')
 
-        # We'll need a quick serializer for this
         serializer = MaintenanceAssignmentSerializer(assignments, many=True)
         return Response(serializer.data)
-
-
-User = get_user_model()
-
-
-class ApproveAndPayVendorView(APIView):
-    """ POST /api/maintenance/requests/<pk>/pay/ """
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, pk):
-        # 1. Fetch the request and ensure it belongs to the Landlord's Organisation
-        m_request = get_object_or_404(
-            MaintenanceRequest.objects.select_for_update(),
-            pk=pk,
-            organisation=request.user.organisation
-        )
-
-        # 2. Get the active assignment
-        assignment = m_request.assignments.last()
-        if not assignment:
-            return Response({"error": "No vendor assigned to this request."}, status=400)
-
-        if m_request.status == MaintenanceRequest.CLOSED:
-            return Response({"error": "This request has already been closed and paid."}, status=400)
-
-        # 3. Get the final cost from the frontend
-        final_cost = request.data.get('cost')
-        if not final_cost or float(final_cost) <= 0:
-            return Response({"error": "A valid payout amount is required."}, status=400)
-
-        final_cost = float(final_cost)
-
-        try:
-            with transaction.atomic():
-                # --- A. DEBIT THE LANDLORD (ORGANISATION) ---
-                org_wallet = Wallet.objects.select_for_update().get(organisation=m_request.organisation)
-
-                if org_wallet.balance < final_cost:
-                    return Response({
-                        "error": f"Insufficient funds. Wallet Balance: ₦{org_wallet.balance}, Required: ₦{final_cost}"
-                    }, status=400)
-
-                WalletTransaction.objects.create(
-                    wallet=org_wallet,
-                    amount=final_cost,
-                    transaction_type=WalletTransaction.DEBIT,
-                    description=f"Maintenance Payout: {m_request.title} ({assignment.vendor.name})",
-                    reference=f"MNT-PAY-{m_request.id.hex[:8]}"
-                )
-
-                # --- B. CREDIT THE VENDOR ---
-                # Find the Vendor's user account via the email on their Vendor profile
-                vendor_user = User.objects.filter(email=assignment.vendor.email).first()
-                if not vendor_user:
-                    raise Exception("Vendor does not have a registered system account to receive funds.")
-
-                vendor_wallet, _ = Wallet.objects.get_or_create(user=vendor_user, defaults={'organisation': None})
-
-                WalletTransaction.objects.create(
-                    wallet=vendor_wallet,
-                    amount=final_cost,
-                    transaction_type=WalletTransaction.CREDIT,
-                    description=f"Payment for Work Order: {m_request.title}",
-                    reference=f"MNT-REC-{m_request.id.hex[:8]}"
-                )
-
-                # --- C. UPDATE MAINTENANCE RECORDS ---
-                assignment.cost = final_cost
-                assignment.completed_at = transaction.now()
-                assignment.save()
-
-                m_request.status = MaintenanceRequest.CLOSED
-                m_request.save()
-
-            return Response({"message": "Vendor paid successfully and request closed."}, status=200)
-
-        except Exception as e:
-            return Response({"error": str(e)}, status=400)
-
-

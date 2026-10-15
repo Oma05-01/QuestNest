@@ -1,8 +1,7 @@
 from django.db import models
 from django.conf import settings
 
-
-from organisations.models import Organisation
+from workspaces.models import Workspace # 🟢 Updated import
 
 
 class Notification(models.Model):
@@ -19,17 +18,20 @@ class Notification(models.Model):
         (ERROR, "Error"),
     ]
 
+    # 🟢 KEPT: Notifications pop up on a human's phone/screen
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="notifications"
     )
 
-    organisation = models.ForeignKey(
-        Organisation,
+    # 🟢 CHANGED: The operational context of the notification
+    workspace = models.ForeignKey(
+        Workspace,
         on_delete=models.CASCADE,
         null=True,
-        blank=True
+        blank=True,
+        related_name="notifications" # Added for team activity feeds!
     )
 
     title = models.CharField(max_length=255)

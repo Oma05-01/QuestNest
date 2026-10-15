@@ -1,33 +1,20 @@
 from operations.rules import register_rule
 from operations.constants import EventType
-from operations.models import Task
-from operations.services.event_service import log_event
+# 🟢 CHANGED: Import the service we refactored instead of the raw model
+from operations.services.task_service import create_task
 
+# 🟢 CHANGED: Listen directly to PAYMENT_SUCCESS and match the new decorator syntax
+@register_rule(EventType.PAYMENT_SUCCESS, priority=50)
+def create_task_on_successful_payment(event, visited=None):
 
-@register_rule(trigger_event=EventType.PAYMENT_STATUS_CHANGED)
-def create_task_on_successful_payment(event):
+    workspace = event.workspace # 🟢 CHANGED: Replaced organisation
 
-    if event.metadata.get("to") != "success":
-        return
-
-    organisation = event.organisation
-
-    task = Task.objects.create(
-        organisation=organisation,
+    # 🟢 CHANGED: The task service now handles both DB creation AND event logging automatically!
+    create_task(
+        workspace=workspace,
         title="Confirm receipt of payment",
         related_object_type="Payment",
         related_object_id=event.object_id,
-        created_by=None
-    )
-
-    log_event(
-        organisation=organisation,
-        actor=None,
-        event_type=EventType.TASK_CREATED,
-        object_type="Task",
-        object_id=str(task.id),
-        metadata={
-            "triggered_by_event": event.event_type
-        },
-        parent_event=event
+        parent_event=event, # Links the event genealogy for the Audit Trace
+        actor=None # System generated
     )

@@ -3,19 +3,19 @@ from operations.constants import EventType
 
 def create_task(
     *,
-    organisation,
+    workspace,          # 🟢 CHANGED: Replaced organisation
     title,
     description="",
     assigned_to=None,
     related_object_type=None,
     related_object_id=None,
     due_date=None,
-    parent_event=None,  # 👈 Add this optional parameter
-    actor=None          # 👈 Add this optional parameter
+    parent_event=None,
+    actor=None
 ):
     # 1. Create the task
     task = Task.objects.create(
-        organisation=organisation,
+        workspace=workspace,  # 🟢 CHANGED
         title=title,
         description=description,
         assigned_to=assigned_to,
@@ -29,7 +29,7 @@ def create_task(
 
     # 2. Automatically log the event
     log_event(
-        organisation=organisation,
+        workspace=workspace,  # 🟢 CHANGED
         actor=actor,
         event_type=EventType.TASK_CREATED,
         object_type="Task",

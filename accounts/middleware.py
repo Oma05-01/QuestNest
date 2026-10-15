@@ -1,10 +1,9 @@
 from django.shortcuts import redirect
-from django.urls import reverse
 
 class LoginRequiredMiddleware:
+    # 🟢 Cleaned up to explicitly list open paths
     PUBLIC_PATHS = [
-        '/api/token/',
-        '/api/token/refresh/',
+        '/api/',  # We bypass APIs here because Django Rest Framework handles API auth!
         '/accounts/enter-email/',
         '/accounts/enter-password/',
         '/accounts/register/',
@@ -18,36 +17,19 @@ class LoginRequiredMiddleware:
         '/media/',
     ]
 
-    # Define role-based access for dashboards
-    ROLE_DASHBOARD_PATHS = {
-        'tenant': '/dashboard/tenant/',
-        'landlord': '/dashboard/landlord/',
-        'agent': '/dashboard/agent/',
-        'admin': '/dashboard/admin/',
-    }
-
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
         path = request.path
 
-
-        if path.startswith('/api/'):
-            return self.get_response(request)
-
-
-        # Allow public URLs
+        # 🟢 If the path is NOT public, enforce authentication
         if not any(path.startswith(p) for p in self.PUBLIC_PATHS):
             if not request.user.is_authenticated:
                 return redirect('enter_email')
 
-            # Role-based dashboard access
-            for role, dashboard_path in self.ROLE_DASHBOARD_PATHS.items():
-                if path.startswith(dashboard_path) and request.user.role != role:
-                    # Redirect to correct dashboard
-                    correct_path = self.ROLE_DASHBOARD_PATHS.get(request.user.role, '/')
-                    return redirect(correct_path)
+        # 🟢 REMOVED all the dashboard redirection logic.
+        # The frontend will now determine what UI to show based on the active Workspace!
 
         response = self.get_response(request)
         return response

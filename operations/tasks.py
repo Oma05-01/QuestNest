@@ -35,7 +35,8 @@ def process_event_rules_task(event_id):
             event_type=event.event_type,
             is_active=True
         ).filter(
-            Q(organisation=event.organisation) | Q(organisation__isnull=True)
+            # 🟢 CHANGED: Replaced organisation with workspace
+            Q(workspace=event.workspace) | Q(workspace__isnull=True)
         ).order_by("execution_order")
 
         for rule in rules:
@@ -53,21 +54,21 @@ def process_event_rules_task(event_id):
 
 @shared_task
 def trigger_due_rent_payments():
-    from rentals.models import Tenancy
     """
     The Midnight Scan: Proactively identifies due and overdue rent.
-    Only processes for VERIFIED organisations.
+    Only processes for VERIFIED workspaces.
     """
+    from rentals.models import Tenancy
     from operations.services.event_service import log_event
 
     today = timezone.now().date()
 
-    # 🟢 Optimization: Filter by ACTIVE tenancies in VERIFIED orgs
+    # 🟢 CHANGED: Filter by ACTIVE tenancies in VERIFIED workspaces
     tenancies = Tenancy.objects.filter(
         status=Tenancy.ACTIVE,
         next_payment_date__isnull=False,
-        organisation__is_verified=True # 🛡️ The Security Gate
-    ).select_related('organisation', 'tenant')
+        workspace__is_verified=True # 🛡️ The Security Gate
+    ).select_related('workspace', 'tenant') # 🟢 CHANGED: select_related workspace
 
     for tenancy in tenancies:
         due_date = tenancy.next_payment_date
@@ -77,7 +78,7 @@ def trigger_due_rent_payments():
         # SCENARIO A: It's Due Day
         if today == due_date:
             log_event(
-                organisation=tenancy.organisation,
+                workspace=tenancy.workspace, # 🟢 CHANGED
                 actor=tenancy.tenant,
                 event_type=EventType.RENT_PAYMENT_DUE,
                 object_type="Tenancy",
@@ -92,7 +93,7 @@ def trigger_due_rent_payments():
         # SCENARIO B: It's Overdue (Past Grace Period)
         elif today > grace_limit and not tenancy.late_fee_applied:
             log_event(
-                organisation=tenancy.organisation,
+                workspace=tenancy.workspace, # 🟢 CHANGED
                 actor=tenancy.tenant,
                 event_type=EventType.RENT_OVERDUE,
                 object_type="Tenancy",
@@ -125,7 +126,7 @@ def retry_payment_task(payment_id):
         payment = Payment.objects.get(id=payment_id)
         if payment.status == Payment.FAILED:
             log_event(
-                organisation=payment.organisation,
+                workspace=payment.workspace, # 🟢 CHANGED
                 actor=payment.user,
                 event_type=EventType.PAYMENT_INITIATED,
                 object_type="Payment",

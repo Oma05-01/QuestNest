@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../api/client';
 
 export default function NewMaintenanceRequest({ isOpen, onClose, onSuccess }) {
   const [title, setTitle] = useState('');
@@ -6,22 +7,22 @@ export default function NewMaintenanceRequest({ isOpen, onClose, onSuccess }) {
   const [priority, setPriority] = useState('medium');
   const [images, setImages] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // We need to know which unit/org the tenant belongs to
   const [activeLease, setActiveLease] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
-      // Fetch the tenant's active lease to automatically get the unit_id and org_id
       const fetchLease = async () => {
-        const token = localStorage.getItem('access_token');
-        const res = await fetch('http://127.0.0.1:8000/api/leases/', { // Adjust to your actual leases endpoint
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await res.json();
-        // Assuming the tenant has at least one active lease
-        if (data.length > 0) {
-            setActiveLease(data[0]); 
+        try {
+          const res = await apiFetch('/api/leases/');
+          if (res.ok) {
+            const data = await res.json();
+            const leases = Array.isArray(data) ? data : data.results || [];
+            if (leases.length > 0) {
+              setActiveLease(leases[0]);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to fetch lease details:", err);
         }
       };
       fetchLease();
@@ -29,59 +30,51 @@ export default function NewMaintenanceRequest({ isOpen, onClose, onSuccess }) {
   }, [isOpen]);
 
   const handleImageChange = (e) => {
-    // Convert FileList to Array and add to state
     const files = Array.from(e.target.files);
-    setImages(prev => [...prev, ...files]);
+    setImages((prev) => [...prev, ...files]);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!activeLease) return alert("No active lease found to attach this request to.");
-    
-    setIsSubmitting(true);
-    const token = localStorage.getItem('access_token');
 
-    // 🟢 Critical: Because we are sending files, we MUST use FormData, not JSON.stringify
+    const unitId = activeLease?.unit?.id || activeLease?.tenancy?.unit?.id || activeLease?.unit;
+    if (!unitId) {
+      alert("No active lease or unit found to attach this request to.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
     const formData = new FormData();
     formData.append('title', title);
     formData.append('description', description);
     formData.append('priority', priority);
-    
-    // Send the routing data your Django view expects
-    formData.append('unit', activeLease.tenancy.unit.id); // Adjust based on your lease serializer
-    formData.append('unit_org', activeLease.tenancy.unit.asset.organisation); // Adjust based on your lease serializer
+    formData.append('unit', unitId);
 
-    // Append multiple files
-    images.forEach(image => {
+    images.forEach((image) => {
       formData.append('images', image);
     });
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/maintenance/', {
+      const res = await apiFetch('/api/maintenance/', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          // DO NOT set 'Content-Type': 'multipart/form-data'. 
-          // Browser sets it automatically with the correct boundary when using FormData!
-        },
-        body: formData
+        body: formData, // apiFetch handles omitting Content-Type for FormData
       });
 
       if (res.ok) {
-        onSuccess(); // Refresh the list
-        onClose(); // Close modal
-        
-        // Reset form
+        onSuccess();
+        onClose();
         setTitle('');
         setDescription('');
         setPriority('medium');
         setImages([]);
       } else {
         const errData = await res.json();
-        console.error(errData);
-        alert("Failed to submit request.");
+        console.error("Maintenance submit error:", errData);
+        alert("Failed to submit maintenance request.");
       }
     } catch (err) {
+      console.error(err);
       alert("Network error.");
     } finally {
       setIsSubmitting(false);
@@ -101,27 +94,34 @@ export default function NewMaintenanceRequest({ isOpen, onClose, onSuccess }) {
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Issue Title</label>
-            <input 
-              type="text" required placeholder="e.g., Leaking pipe under sink"
-              value={title} onChange={e => setTitle(e.target.value)}
+            <input
+              type="text"
+              required
+              placeholder="e.g., Leaking pipe under sink"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-quest-blue"
             />
           </div>
 
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Description</label>
-            <textarea 
-              required placeholder="Please describe the issue in detail..." rows="4"
-              value={description} onChange={e => setDescription(e.target.value)}
+            <textarea
+              required
+              placeholder="Please describe the issue in detail..."
+              rows="4"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-quest-blue resize-none"
-            ></textarea>
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1.5">Priority</label>
-              <select 
-                value={priority} onChange={e => setPriority(e.target.value)}
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-quest-blue"
               >
                 <option value="low">Low</option>
@@ -130,13 +130,15 @@ export default function NewMaintenanceRequest({ isOpen, onClose, onSuccess }) {
                 <option value="urgent">Urgent</option>
               </select>
             </div>
-            
+
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1.5">Upload Photos</label>
               <div className="relative w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 transition cursor-pointer text-center text-sm text-slate-500 font-bold overflow-hidden">
                 <span>{images.length > 0 ? `${images.length} file(s) selected` : 'Choose Files...'}</span>
-                <input 
-                  type="file" multiple accept="image/*"
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
                   onChange={handleImageChange}
                   className="absolute inset-0 opacity-0 cursor-pointer"
                 />
@@ -144,8 +146,9 @@ export default function NewMaintenanceRequest({ isOpen, onClose, onSuccess }) {
             </div>
           </div>
 
-          <button 
-            type="submit" disabled={isSubmitting}
+          <button
+            type="submit"
+            disabled={isSubmitting}
             className="w-full bg-quest-navy text-white font-bold py-4 rounded-xl hover:bg-opacity-90 disabled:opacity-50 mt-4 transition shadow-lg"
           >
             {isSubmitting ? 'Submitting...' : 'Submit Request'}

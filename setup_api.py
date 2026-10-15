@@ -3,7 +3,7 @@ import os
 # List of app names extracted from your urlpatterns
 apps = [
     "accounts", "assets", "leases", "rentals", "payments", "wallet",
-    "escrow", "notifications", "operations", "organisations",
+    "escrow", "notifications", "operations", "workspaces",
     "verification", "user_messages", "dashboards"
 ]
 

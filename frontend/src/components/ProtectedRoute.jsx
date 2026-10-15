@@ -1,15 +1,27 @@
-import { Navigate } from 'react-router-dom';
+// src/components/ProtectedRoute.jsx
+import { Navigate, useLocation } from 'react-router-dom';
+
+function isTokenExpired(token) {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    // exp is in seconds; Date.now() is in milliseconds
+    return payload.exp * 1000 < Date.now();
+  } catch (e) {
+    return true; // Invalid token format
+  }
+}
 
 export default function ProtectedRoute({ children }) {
-  // TODO: We will connect this to your Django backend's JWT later.
-  // For now, we simulate a logged-out user (set to true to test the dashboard)
-  const isAuthenticated = true; 
+  const location = useLocation();
+  const token = localStorage.getItem('access_token');
 
-  if (!isAuthenticated) {
-    // Kick them to login if they have no token
-    return <Navigate to="/login" replace />;
+  // If missing or expired, clear invalid state and redirect
+  if (!token || isTokenExpired(token)) {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Let them through if they are authenticated
   return children;
 }

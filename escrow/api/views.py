@@ -9,26 +9,27 @@ from escrow.services.escrow_service import EscrowService
 
 from escrow.models import Escrow
 from .serializers import EscrowSerializer
-
+from core.api.permissions import IsWorkspaceMember, BelongsToWorkspace
 
 class EscrowListView(APIView):
     """ GET /api/escrows/ """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsWorkspaceMember]
 
     @extend_schema(summary="List Escrows", responses=EscrowSerializer(many=True))
     def get(self, request):
-        # 🟢 FIX: Clean separation of Tenant vs Organisation queries
-        if request.user.role == 'tenant':
-            escrows = Escrow.objects.filter(tenant=request.user)
+        # 🟢 Filter strictly based on active Workspace Type
+        if request.workspace.workspace_type == 'business':
+            # Landlords/Managers see all escrows tied to their Business Workspace
+            escrows = Escrow.objects.filter(workspace=request.workspace)
         else:
-            # Landlords and Agents see all escrows tied to their Organisation
-            escrows = Escrow.objects.filter(tenancy__unit__asset__organisation=request.user.organisation)
+            # Tenants (Personal) only see escrows where they are the individual tenant
+            escrows = Escrow.objects.filter(tenant=request.user)
 
-        # Optimize the database hit
+        # 🟢 Optimized hit using the direct workspace relationship
         escrows = escrows.select_related(
             'tenant',
-            'tenancy__unit',
-            'tenancy__unit__asset__organisation'
+            'workspace',
+            'tenancy__unit'
         ).order_by('-created_at')
 
         serializer = EscrowSerializer(escrows, many=True)
@@ -37,23 +38,15 @@ class EscrowListView(APIView):
 
 class EscrowDetailView(APIView):
     """ GET /api/escrows/<uuid:pk>/ """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsWorkspaceMember, BelongsToWorkspace]
 
     @extend_schema(summary="Get Escrow Details", responses=EscrowSerializer)
     def get(self, request, pk):
-        # 🟢 FIX: Ensure proper security scopes using Organisation
-        if request.user.role == 'tenant':
-            escrow = get_object_or_404(
-                Escrow.objects.select_related('tenant', 'tenancy__unit', 'tenancy__unit__asset__organisation'),
-                pk=pk,
-                tenant=request.user
-            )
+        # 🟢 Security: Ensure the escrow belongs to either this business OR this personal user
+        if request.workspace.workspace_type == 'business':
+            escrow = get_object_or_404(Escrow, pk=pk, workspace=request.workspace)
         else:
-            escrow = get_object_or_404(
-                Escrow.objects.select_related('tenant', 'tenancy__unit', 'tenancy__unit__asset__organisation'),
-                pk=pk,
-                tenancy__unit__asset__organisation=request.user.organisation
-            )
+            escrow = get_object_or_404(Escrow, pk=pk, tenant=request.user)
 
         serializer = EscrowSerializer(escrow)
         return Response(serializer.data)
@@ -61,11 +54,12 @@ class EscrowDetailView(APIView):
 
 class EscrowFundView(APIView):
     """ POST /api/escrows/<uuid:pk>/fund/ """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsWorkspaceMember]
 
     def post(self, request, pk):
         try:
-            # We call our service to handle the heavy lifting
+            # Usually, only the tenant funds an escrow.
+            # The Service Layer should verify if the actor has sufficient balance.
             escrow = EscrowService.fund_escrow_from_wallet(
                 escrow_id=pk,
                 actor=request.user
@@ -77,5 +71,5 @@ class EscrowFundView(APIView):
 
         except ValidationError as e:
             return Response({"error": str(e.message)}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({"error": "An unexpected error occurred."}, status=500)
+        except Exception:
+            return Response({"error": "An unexpected error occurred during funding."}, status=500)

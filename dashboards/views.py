@@ -6,7 +6,7 @@ from assets.models import Assets
 from wallet.models import Wallet
 from user_messages.models import Message
 from payments.models import Payment
-from organisations.models import Membership
+from workspaces.models import Membership
 
 # ----------------- Tenant Dashboard -----------------
 @login_required

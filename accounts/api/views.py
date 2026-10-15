@@ -4,15 +4,15 @@ from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from django.contrib.sites.shortcuts import get_current_site
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
 
 from .serializers import (
     CheckEmailSerializer, LoginSerializer, RegisterSerializer,
@@ -71,13 +71,12 @@ class LoginView(APIView):
         if not user:
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        if not user.is_verified:  # (Assuming you have an is_verified boolean on your User model)
+        if not user.is_verified:
             return Response(
                 {"detail": "Please verify your email address before logging in."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Generate JWT Tokens manually
         refresh = QuestNestTokenSerializer.get_token(user)
 
         return Response({
@@ -98,9 +97,8 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        user = serializer.save() # 🟢 This now auto-creates the Personal Workspace!
 
-        # Email Verification Logic
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
 
@@ -133,7 +131,6 @@ class UserUpdateView(APIView):
         serializer.is_valid(raise_exception=True)
         updated_user = serializer.save()
 
-        # Audit Logging
         changes = {
             field: {"old": old_val, "new": getattr(updated_user, field)}
             for field, old_val in old_values.items()
@@ -142,7 +139,8 @@ class UserUpdateView(APIView):
 
         if changes:
             log_event(
-                organisation=getattr(request, 'organisation', None),  # Safe fallback
+                # 🟢 CHANGED: Replaced organisation with workspace
+                workspace=getattr(request, 'workspace', None),
                 actor=request.user,
                 event_type=EventType.USER_UPDATED,
                 object_type="User",
@@ -151,6 +149,7 @@ class UserUpdateView(APIView):
             )
 
         return Response(UserSerializer(updated_user).data)
+
 
 class VerifyEmailView(APIView):
     permission_classes = [AllowAny]
@@ -193,26 +192,20 @@ class ResendVerificationEmailView(APIView):
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data['email'].lower()
 
-        # Step 1: Check if the user exists
         user = User.objects.filter(email=email).first()
 
         if not user:
-            # 🛡️ SECURITY BEST PRACTICE:
-            # We return a success message even if the user doesn't exist.
-            # This prevents malicious bots from using this endpoint to guess valid emails.
             return Response(
                 {"message": "If an account with that email exists, a verification link has been sent."},
                 status=status.HTTP_200_OK
             )
 
-        # Step 2: Check if they are already verified
         if user.is_verified:
             return Response(
                 {"detail": "This account is already verified. Please log in."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Step 3: Trigger the email send
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
 
@@ -222,7 +215,7 @@ class ResendVerificationEmailView(APIView):
         send_mail(
             subject="Verify your QuestNest account",
             message=f"Welcome to QuestNest! Click the link below to verify your email:\n\n{verification_link}",
-            from_email=settings.EMAIL_HOST_USER,  # Using the fix from earlier!
+            from_email=settings.EMAIL_HOST_USER,
             recipient_list=[user.email],
         )
 
@@ -230,3 +223,49 @@ class ResendVerificationEmailView(APIView):
             {"message": "If an account with that email exists, a verification link has been sent."},
             status=status.HTTP_200_OK
         )
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="User Logout",
+        description="Invalidates and blacklists the provided JWT refresh token.",
+        request=inline_serializer(
+            name='LogoutRequest',
+            fields={
+                'refresh': serializers.CharField(help_text="The refresh token to blacklist")
+            }
+        ),
+        responses={
+            200: inline_serializer(
+                name='LogoutSuccess',
+                fields={'message': serializers.CharField()}
+            ),
+            400: inline_serializer(
+                name='LogoutError',
+                fields={'detail': serializers.CharField()}
+            )
+        }
+    )
+    def post(self, request):
+        refresh_token = request.data.get("refresh")
+
+        if not refresh_token:
+            return Response(
+                {"detail": "Refresh token is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return Response(
+                {"message": "Successfully logged out."},
+                status=status.HTTP_200_OK
+            )
+        except TokenError:
+            return Response(
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_400_BAD_REQUEST
+            )

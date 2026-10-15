@@ -9,7 +9,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from core.api.permissions import IsTenant, BelongsToOrganisation
+# 🟢 CHANGED: Imported our context-aware permission
+from core.api.permissions import IsWorkspaceMember
 from operations.constants import EventType
 from questnest import settings
 from .serializers import PayRentSerializer
@@ -23,7 +24,8 @@ class InitializePaystackPaymentView(APIView):
     POST /api/payments/paystack/initialize/
     Initializes a transaction with Paystack and returns a checkout URL.
     """
-    permission_classes = [IsAuthenticated, IsTenant, BelongsToOrganisation]
+    # 🟢 CHANGED: Replaced rigid role checks with context validation
+    permission_classes = [IsAuthenticated, IsWorkspaceMember]
 
     def post(self, request):
         tenancy_id = request.data.get('tenancy_id')
@@ -36,7 +38,7 @@ class InitializePaystackPaymentView(APIView):
         # 2. Create the internal record (Initiated state)
         payment = Payment.objects.create(
             user=user,
-            organisation=user.organisation,
+            workspace=request.workspace, # 🟢 CHANGED: Scoped to the active workspace header
             amount=amount,
             reference=reference,
             status=Payment.INITIATED,
@@ -48,7 +50,10 @@ class InitializePaystackPaymentView(APIView):
             email=user.email,
             amount_naira=amount,
             reference=reference,
-            metadata={"payment_id": payment.id}
+            metadata={
+                "payment_id": str(payment.id),
+                "workspace_id": str(request.workspace.id) # 🟢 ADDED: Great for external auditing
+            }
         )
 
         if paystack_data.get('status'):
@@ -65,10 +70,11 @@ class PayRentView(APIView):
     POST /api/payments/pay-rent/
     Handles internal wallet-to-wallet rent payments.
     """
-    permission_classes = [IsAuthenticated, IsTenant, BelongsToOrganisation]
+    # 🟢 CHANGED: Replaced rigid role checks
+    permission_classes = [IsAuthenticated, IsWorkspaceMember]
 
     def post(self, request):
-        # 1. Validate incoming data
+        # 1. Validate incoming data (Serializer handles checking if Tenancy belongs to Workspace)
         serializer = PayRentSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
 
@@ -122,6 +128,8 @@ def paystack_webhook(request):
         # 🟢 CASE 1: CHARGE SUCCESS
         if event_type == 'charge.success':
             if payment.status != Payment.SUCCESS:
+                # 🟢 Because we updated LifecycleMixin, this transition automatically
+                # routes the event to `payment.workspace`!
                 payment.transition_to(
                     Payment.SUCCESS,
                     actor=payment.user,
@@ -140,7 +148,7 @@ def paystack_webhook(request):
                 payment.transition_to(
                     Payment.FAILED,
                     actor=payment.user,
-                    event_type=EventType.PAYMENT_STATUS_CHANGED,
+                    event_type=EventType.PAYMENT_FAILED, # 🟢 MINOR FIX: Changed from PAYMENT_STATUS_CHANGED to PAYMENT_FAILED to match your rules.py listener
                     metadata={
                         "gateway": "paystack",
                         "failure_reason": failure_reason,

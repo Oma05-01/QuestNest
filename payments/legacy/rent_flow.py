@@ -3,43 +3,39 @@ from datetime import timedelta
 from django.core.exceptions import ValidationError
 
 from escrow.models import Escrow
-from wallet.models import WalletTransaction
+from wallet.models import Wallet, WalletTransaction
 
 from operations.services.event_service import log_event
 from operations.constants import EventType
 from wallet.services.wallet_service import create_wallet_transaction
 
 
-def create_rent_escrow(*, tenant, landlord, property_obj, amount):
+def create_rent_escrow(*, tenant, tenancy, amount):
     """
     Creates a pending escrow for rent.
     No money moves here.
     """
-    if not property_obj.is_available:
-        raise ValidationError("Property is not available for rent.")
+    # 🟢 CHANGED: Validate against the workspace, not the old organisation model
+    if not tenancy.workspace.is_verified:
+        raise ValidationError("The workspace managing this tenancy is not verified.")
 
-    if not property_obj.is_verified:
-        raise ValidationError("Property is not verified for rent.")
-
-    if not property_obj.organisation.verified:
-        raise ValidationError("Organisation owning this property is not verified.")
-
+    # 🟢 CHANGED: Escrow is now linked to workspace and tenancy
     escrow = Escrow.objects.create(
         tenant=tenant,
-        landlord=landlord,
-        property=property_obj,
+        workspace=tenancy.workspace,
+        tenancy=tenancy,
         amount=amount,
         status=Escrow.PENDING
     )
 
     log_event(
-        organisation=property_obj.organisation,
+        workspace=tenancy.workspace,  # 🟢 CHANGED
         actor=tenant,
         event_type=EventType.ESCROW_CREATED,
         object_type="Escrow",
         object_id=str(escrow.id),
         metadata={
-            "property_id": property_obj.id,
+            "tenancy_id": str(tenancy.id),
             "amount": str(amount)
         }
     )
@@ -48,17 +44,17 @@ def create_rent_escrow(*, tenant, landlord, property_obj, amount):
 
 
 @transaction.atomic
-def fund_rent_escrow(*, escrow):
+def fund_rent_escrow(*, escrow, actor=None):
     """
     Debits tenant wallet and funds escrow.
     """
-
     if escrow.status != Escrow.PENDING:
         raise ValidationError("Escrow cannot be funded.")
 
-    tenant_wallet = escrow.tenant.wallet
+    # 🟢 CHANGED: Safely fetch the Tenant's Personal Wallet
+    tenant_wallet = Wallet.objects.filter(user=escrow.tenant, workspace__isnull=True).first()
 
-    if tenant_wallet.balance < escrow.amount:
+    if not tenant_wallet or tenant_wallet.balance < escrow.amount:
         raise ValidationError("Insufficient wallet balance.")
 
     # Debit tenant wallet
@@ -70,45 +66,61 @@ def fund_rent_escrow(*, escrow):
         description=f"Escrow funding for {escrow.tenancy.unit.name}"
     )
 
-    escrow.status = Escrow.FUNDED
-    escrow.save(update_fields=["status"])
+    # 🟢 CHANGED: Highly recommend using transition_to so the Rules Engine catches it!
+    if hasattr(escrow, 'transition_to'):
+        escrow.transition_to(Escrow.FUNDED, actor=actor, event_type=EventType.ESCROW_FUNDED)
+    else:
+        escrow.status = Escrow.FUNDED
+        escrow.save(update_fields=["status"])
 
     return escrow
 
-@transaction.atomic
-def release_rent_escrow(*, escrow):
-    """
-    Releases funds to landlord after successful handover.
-    """
 
+@transaction.atomic
+def release_rent_escrow(*, escrow, actor=None):
+    """
+    Releases funds to the Property Manager's Workspace after successful handover.
+    """
     if escrow.status != Escrow.FUNDED:
         raise ValidationError("Escrow is not funded.")
 
-    landlord_wallet = escrow.landlord.wallet
+    # 🟢 CHANGED: Send money to the Business Workspace Wallet, not the old 'landlord'
+    workspace_wallet = Wallet.objects.filter(workspace=escrow.workspace).first()
 
-    # Credit landlord wallet
+    if not workspace_wallet:
+        raise ValidationError("Workspace wallet not found.")
+
+    # Credit workspace wallet
     create_wallet_transaction(
-        wallet=landlord_wallet,
+        wallet=workspace_wallet,
         amount=escrow.amount,
         transaction_type=WalletTransaction.CREDIT,
         reference=f"Rent payout escrow #{escrow.id}",
+        description=f"Escrow release for {escrow.tenancy.unit.name}"
     )
 
-    escrow.status = Escrow.RELEASED
-    escrow.save(update_fields=["status"])
+    if hasattr(escrow, 'transition_to'):
+        escrow.transition_to(Escrow.RELEASED, actor=actor, event_type=EventType.ESCROW_RELEASED)
+    else:
+        escrow.status = Escrow.RELEASED
+        escrow.save(update_fields=["status"])
 
     return escrow
 
+
 @transaction.atomic
-def refund_rent_escrow(*, escrow):
+def refund_rent_escrow(*, escrow, actor=None):
     """
     Refunds tenant if rent fails or dispute is resolved.
     """
-
     if escrow.status != Escrow.FUNDED:
         raise ValidationError("Escrow cannot be refunded.")
 
-    tenant_wallet = escrow.tenant.wallet
+    # 🟢 CHANGED: Explicitly credit the Personal Wallet
+    tenant_wallet = Wallet.objects.filter(user=escrow.tenant, workspace__isnull=True).first()
+
+    if not tenant_wallet:
+        raise ValidationError("Tenant personal wallet not found.")
 
     # Credit tenant wallet
     create_wallet_transaction(
@@ -116,37 +128,40 @@ def refund_rent_escrow(*, escrow):
         amount=escrow.amount,
         transaction_type=WalletTransaction.CREDIT,
         reference=f"Rent refund escrow #{escrow.id}",
+        description=f"Escrow refund for {escrow.tenancy.unit.name}"
     )
 
-    escrow.status = Escrow.REFUNDED
-    escrow.save(update_fields=["status"])
+    if hasattr(escrow, 'transition_to'):
+        escrow.transition_to(Escrow.REFUNDED, actor=actor, event_type=EventType.ESCROW_REFUNDED)
+    else:
+        escrow.status = Escrow.REFUNDED
+        escrow.save(update_fields=["status"])
 
     return escrow
+
 
 def renew_rent_escrow(*, current_escrow, period_days=30):
     """
     Automatically creates a new escrow for the next rent period
     based on the current escrow's end_date.
     """
-
     if current_escrow.status != Escrow.RELEASED:
         raise ValidationError("Only released escrows can be renewed.")
 
-    property_obj = current_escrow.property
+    tenancy = current_escrow.tenancy
 
-    # Ensure property is available for the next period
-    if not property_obj.is_available:
-        raise ValidationError("Property is not available for renewal.")
+    # Ensure tenancy is still active
+    if tenancy.status != tenancy.ACTIVE:
+        raise ValidationError("Tenancy is no longer active for renewal.")
 
     # Calculate new start and end dates
     new_start_date = current_escrow.end_date + timedelta(days=1)
     new_end_date = new_start_date + timedelta(days=period_days)
 
-    # Create new escrow using existing service
+    # 🟢 CHANGED: Use tenancy instead of landlord/property
     new_escrow = create_rent_escrow(
         tenant=current_escrow.tenant,
-        landlord=current_escrow.landlord,
-        property_obj=property_obj,
+        tenancy=tenancy,
         amount=current_escrow.amount
     )
 

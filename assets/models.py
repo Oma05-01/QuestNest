@@ -1,7 +1,8 @@
 from django.db import models
 from accounts.models import User
-from organisations.models import Organisation
+from workspaces.models import Workspace  # 🟢 Updated import!
 from operations.lifecycle import LifecycleMixin
+
 
 class Assets(LifecycleMixin, models.Model):
     DRAFT = "draft"
@@ -26,21 +27,25 @@ class Assets(LifecycleMixin, models.Model):
         ARCHIVED: [],
     }
 
-    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name="assets", null=True, blank=True)
-    name = models.CharField(max_length=255)
-    owner = models.ForeignKey(
-        User,
+    # 🟢 CHANGED: Now points exclusively to the Workspace
+    workspace = models.ForeignKey(
+        Workspace,
         on_delete=models.CASCADE,
-        related_name="owned_assets",
-        blank=True,
-        null=True
+        related_name="assets",
+        null=True,
+        blank=True
     )
+
+    name = models.CharField(max_length=255)
     location = models.TextField()
+
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default=DRAFT
     )
+
+    # 🟢 KEPT: Bookmarks belong to the human, not the workspace!
     saved_by = models.ManyToManyField(User, blank=True, related_name='saved_assets')
 
     def __str__(self):
@@ -49,6 +54,7 @@ class Assets(LifecycleMixin, models.Model):
     @property
     def is_verified(self):
         return getattr(self, "verification", None) and self.verification.verified
+
 
 class Unit(LifecycleMixin, models.Model):
     AVAILABLE = "available"
@@ -71,7 +77,7 @@ class Unit(LifecycleMixin, models.Model):
     ]
 
     asset = models.ForeignKey(
-        "Assets",
+        "Assets",  # (Note: You might want to rename this model to 'Asset' singular in the future!)
         on_delete=models.CASCADE,
         related_name="units"
     )
@@ -94,6 +100,7 @@ class Unit(LifecycleMixin, models.Model):
     def __str__(self):
         return f"{self.asset.name} - {self.name}"
 
+    # 🟢 CHANGED: Updated property to match the new architecture
     @property
-    def organisation(self):
-        return self.asset.organisation
+    def workspace(self):
+        return self.asset.workspace

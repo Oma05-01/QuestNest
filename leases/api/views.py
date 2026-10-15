@@ -5,7 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
 
-from core.api.permissions import IsLandlordOrAdmin, BelongsToOrganisation
+# 🟢 NEW: Clean, context-aware permissions
+from core.api.permissions import IsBusinessWorkspace, BelongsToWorkspace, IsWorkspaceMember
 from leases.models import LeaseAgreement, LeaseSignature
 from leases.services.lease_service import (
     create_lease_from_tenancy,
@@ -17,23 +18,26 @@ from .serializers import LeaseSerializer, CreateLeaseSerializer
 
 class LeaseListView(APIView):
     """ GET /api/leases/ & POST /api/leases/ """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsWorkspaceMember]
 
     @extend_schema(summary="List Leases", responses=LeaseSerializer(many=True))
     def get(self, request):
-        # 🟢 FIX: Clean separation of Tenant vs Organisation queries
-        if request.user.role == 'tenant':
-            leases = LeaseAgreement.objects.filter(tenancy__tenant=request.user)
+        # 🟢 Filter based on the active workspace type
+        if request.workspace.workspace_type == 'business':
+            # Managers see leases belonging to this business workspace
+            leases = LeaseAgreement.objects.filter(tenancy__workspace=request.workspace)
         else:
-            leases = LeaseAgreement.objects.filter(tenancy__unit__asset__organisation=request.user.organisation)
+            # Tenants (Personal WS) see leases where they are the individual tenant
+            leases = LeaseAgreement.objects.filter(tenancy__tenant=request.user)
 
         leases = leases.prefetch_related('clauses', 'signatures').order_by('-created_at')
         return Response(LeaseSerializer(leases, many=True).data)
 
     @extend_schema(summary="Generate Lease", request=CreateLeaseSerializer, responses={201: LeaseSerializer})
     def post(self, request):
-        if request.user.role not in ['landlord', 'admin']:
-            return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
+        # 🟢 Strict Permission: Only Business Workspaces can generate leases
+        if request.workspace.workspace_type != 'business':
+            return Response({"detail": "Only business workspaces can generate leases."}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = CreateLeaseSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
@@ -47,13 +51,13 @@ class LeaseListView(APIView):
 
 class LeaseSendView(APIView):
     """ POST /api/leases/<uuid:pk>/send/ """
-    permission_classes = [IsAuthenticated, IsLandlordOrAdmin, BelongsToOrganisation]
+    permission_classes = [IsAuthenticated, IsBusinessWorkspace, BelongsToWorkspace]
 
     @extend_schema(summary="Send Lease for Signature",
                    responses={200: inline_serializer(name='SendLeaseRes', fields={'message': serializers.CharField()})})
     def post(self, request, pk):
-        # 🟢 FIX: Ensure landlord's organisation owns the lease
-        lease = get_object_or_404(LeaseAgreement, pk=pk, tenancy__unit__asset__organisation=request.user.organisation)
+        # 🟢 Security: BelongsToWorkspace handles the ownership check!
+        lease = get_object_or_404(LeaseAgreement, pk=pk)
 
         if lease.status != LeaseAgreement.DRAFT:
             return Response({"error": "Only draft leases can be sent."}, status=status.HTTP_400_BAD_REQUEST)
@@ -64,16 +68,17 @@ class LeaseSendView(APIView):
 
 class LeaseSignView(APIView):
     """ POST /api/leases/<uuid:pk>/sign/ """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsWorkspaceMember]
 
     @extend_schema(summary="Sign Lease",
                    responses={200: inline_serializer(name='SignLeaseRes', fields={'message': serializers.CharField()})})
     def post(self, request, pk):
         lease = get_object_or_404(LeaseAgreement, pk=pk)
 
-        # 🟢 FIX: Security Patch. Ensure the person signing is actually involved in this lease!
+        # 🟢 Security: Check involvement via active context
         is_tenant = lease.tenancy.tenant == request.user
-        is_landlord = lease.tenancy.unit.asset.organisation == request.user.organisation
+        is_landlord = (request.workspace.workspace_type == 'business' and
+                       lease.tenancy.workspace == request.workspace)
 
         if not (is_tenant or is_landlord):
             return Response({"error": "You do not have permission to sign this lease."},
@@ -96,14 +101,15 @@ class LeaseSignView(APIView):
 
         return Response({"message": "Lease signed successfully."}, status=status.HTTP_200_OK)
 
+
 class LeaseDetailView(generics.RetrieveAPIView):
     """ GET /api/leases/<uuid:pk>/ """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsWorkspaceMember]
     serializer_class = LeaseSerializer
 
     @extend_schema(summary="Get Lease Details")
     def get_queryset(self):
-        # 🟢 FIX: Ensure users can only fetch leases they are involved in!
-        if self.request.user.role == 'tenant':
-            return LeaseAgreement.objects.filter(tenancy__tenant=self.request.user)
-        return LeaseAgreement.objects.filter(tenancy__unit__asset__organisation=self.request.user.organisation)
+        # 🟢 Context-aware filtering
+        if self.request.workspace.workspace_type == 'business':
+            return LeaseAgreement.objects.filter(tenancy__workspace=self.request.workspace)
+        return LeaseAgreement.objects.filter(tenancy__tenant=self.request.user)

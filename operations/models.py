@@ -1,12 +1,13 @@
 from django.db import models
 from django.conf import settings
-from organisations.models import Organisation
+from workspaces.models import Workspace # 🟢 Updated import
 from core.models import BaseModel
 from .constants import EventType
 
 class Event(BaseModel):
-    organisation = models.ForeignKey(
-        Organisation,
+    # 🟢 CHANGED: Events happen within the context of a Workspace
+    workspace = models.ForeignKey(
+        Workspace,
         on_delete=models.CASCADE,
         related_name="events"
     )
@@ -27,7 +28,6 @@ class Event(BaseModel):
     )
 
     event_type = models.CharField(max_length=100, db_index=True)
-
     object_type = models.CharField(max_length=100)
     object_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
 
@@ -45,12 +45,13 @@ class Event(BaseModel):
     )
 
     def __str__(self):
-        return f"{self.event_type} - {self.organisation.name}"
+        return f"{self.event_type} - {self.workspace.name}"
 
     @property
     def object(self):
         from operations.utils import get_object_from_event
         return get_object_from_event(self)
+
 
 class Task(BaseModel):
     OPEN = "open"
@@ -61,12 +62,14 @@ class Task(BaseModel):
         (COMPLETED, "Completed"),
     ]
 
-    organisation = models.ForeignKey(
-        Organisation,
+    # 🟢 CHANGED: The task belongs to the Workspace...
+    workspace = models.ForeignKey(
+        Workspace,
         on_delete=models.CASCADE,
         related_name="tasks"
     )
 
+    # 🟢 KEPT: ...but is assigned to a specific human.
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -92,19 +95,20 @@ class Task(BaseModel):
     def __str__(self):
         return self.title
 
+
 class EventRule(BaseModel):
     """
     Defines what action should occur when a specific event is triggered.
     """
-
     event_type = models.CharField(
         max_length=100,
-        choices=EventType.choices(),  # Assuming EventType has a choices method, or pass a list of tuples
+        choices=EventType.choices(),
         help_text="The event this rule responds to"
     )
 
-    organisation = models.ForeignKey(
-        Organisation,
+    # 🟢 CHANGED: If null, it's a QuestNest global rule. If set, it's a custom PM rule.
+    workspace = models.ForeignKey(
+        Workspace,
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -115,7 +119,7 @@ class EventRule(BaseModel):
         max_length=50,
         choices=(
             ("CREATE_TASK", "Create Task"),
-            ("SEND_EMAIL", "Send Email"),  # Easy to add later!
+            ("SEND_EMAIL", "Send Email"),
         ),
         default="CREATE_TASK"
     )
@@ -132,12 +136,12 @@ class EventRule(BaseModel):
         ordering = ["execution_order"]
 
     def __str__(self):
-        # Safely try to get a title if it exists in the JSON payload
         action_name = self.action_payload.get('title', self.action_type)
         return f"{self.event_type} → {action_name}"
 
-class RuleExecution(models.Model):
 
+class RuleExecution(models.Model):
+    # This model remains unchanged because it only tracks execution status via Event!
     SUCCESS = "success"
     FAILED = "failed"
     SKIPPED = "skipped"

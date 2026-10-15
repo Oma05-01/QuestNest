@@ -1,5 +1,7 @@
 from django.urls import path
-from .views import LeaseListView, LeaseSendView, LeaseSignView, LeaseDetailView
+from .views import LeaseListView, LeaseDetailView, LeaseSendView, LeaseSignView
+
+app_name = 'leases'
 
 urlpatterns = [
     path('', LeaseListView.as_view(), name='lease-list-create'),

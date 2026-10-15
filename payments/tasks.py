@@ -1,41 +1,20 @@
-from celery import shared_task
-from django.utils import timezone
-from datetime import timedelta
-from .models import Payment
-from .services.paystack import PaystackService
+from operations.rules import register_rule
 from operations.constants import EventType
+# 🟢 CHANGED: Import the service we just refactored instead of the raw model
+from operations.services.task_service import create_task
 
+# 🟢 CHANGED: Listen directly to PAYMENT_SUCCESS and match the new decorator syntax
+@register_rule(EventType.PAYMENT_SUCCESS, priority=50)
+def create_task_on_successful_payment(event, visited=None):
 
-@shared_task
-def reconcile_pending_payments():
-    """
-    Finds 'stuck' payments and verifies them against Paystack API.
-    """
-    # 1. Find payments stuck in INITIATED for > 15 mins
-    threshold = timezone.now() - timedelta(minutes=15)
-    stuck_payments = Payment.objects.filter(
-        status=Payment.INITIATED,
-        created_at__lt=threshold
+    workspace = event.workspace # 🟢 CHANGED: Replaced organisation
+
+    # 🟢 CHANGED: The task service now handles both DB creation AND event logging automatically!
+    create_task(
+        workspace=workspace,
+        title="Confirm receipt of payment",
+        related_object_type="Payment",
+        related_object_id=event.object_id,
+        parent_event=event, # Links the genealogy
+        actor=None # System generated
     )
-
-    for payment in stuck_payments:
-        # 2. Call Paystack Verify API
-        response = PaystackService.verify_payment(payment.reference)
-
-        if response.get('status') and response['data']['status'] == 'success':
-            # 🟢 Found a missing success! Update and trigger rules.
-            payment.transition_to(
-                Payment.SUCCESS,
-                actor=payment.user,
-                event_type=EventType.PAYMENT_SUCCESS,
-                metadata={"reason": "reconciliation_sync", "gateway": "paystack"}
-            )
-
-        elif response.get('status') and response['data']['status'] in ['failed', 'abandoned']:
-            # 🔴 Transaction actually failed or user closed the tab
-            payment.transition_to(
-                Payment.FAILED,
-                actor=payment.user,
-                event_type=EventType.PAYMENT_STATUS_CHANGED,
-                metadata={"reason": "reconciliation_sync", "failure_reason": "abandoned"}
-            )

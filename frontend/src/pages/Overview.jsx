@@ -3,86 +3,95 @@ import TenantDashboard from './TenantDashboard';
 import LandlordDashboard from './LandlordDashboard';
 import AdminDashboard from './AdminDashboard';
 import OrganisationSetup from '../components/OrganisationSetup';
+import { apiFetch } from '../api/client';
 
 export default function Overview() {
-  const [userRole, setUserRole] = useState(null);
-  
-  // New States for Organisation Flow
-  const [hasCheckedOrgs, setHasCheckedOrgs] = useState(false);
+  const [user, setUser] = useState(null);
+  const [activeWorkspace, setActiveWorkspace] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+
+  const fetchWorkspaces = async () => {
+    try {
+      const response = await apiFetch('/api/workspaces/');
+      if (response.ok) {
+        const data = await response.json();
+        const workspaces = Array.isArray(data) ? data : data.results || [];
+
+        const activeOrgId = localStorage.getItem('active_org_id');
+        let current = workspaces.find((w) => w.id === activeOrgId);
+
+        if (!current && workspaces.length > 0) {
+          current = workspaces.find((w) => w.workspace_type === 'personal') || workspaces[0];
+          if (current) localStorage.setItem('active_org_id', current.id);
+        }
+
+        setActiveWorkspace(current || null);
+      }
+    } catch (error) {
+      console.error('Failed to load workspace context:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const userString = localStorage.getItem('user');
     if (userString) {
       try {
-        const user = JSON.parse(userString);
-        setUserRole(user.role);
-
-        // 🟢 2. If they are a Landlord, check their organisations before letting them through
-        if (user.role === 'landlord' || user.role === 'agent') {
-          checkOrganisations();
-        } else {
-          // Tenants and Admins don't need this check
-          setHasCheckedOrgs(true); 
-        }
+        setUser(JSON.parse(userString));
       } catch (e) {
-        console.error("Failed to parse user data");
+        console.error('Error parsing stored user data:', e);
       }
     }
+
+    fetchWorkspaces();
+
+    const handleWorkspaceChange = () => {
+      fetchWorkspaces();
+    };
+
+    window.addEventListener('workspaceChanged', handleWorkspaceChange);
+    return () => window.removeEventListener('workspaceChanged', handleWorkspaceChange);
   }, []);
 
-  const checkOrganisations = async () => {
-    const token = localStorage.getItem('access_token');
-    try {
-      const response = await fetch('http://127.0.0.1:8000/api/organisations/', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.ok) {
-        const orgs = await response.json();
-        
-        if (orgs.length === 0) {
-          // They have no companies! Intercept them.
-          setNeedsOnboarding(true);
-        } else {
-          // They have a company. Make sure the active one is set in localStorage.
-          if (!localStorage.getItem('active_org_id')) {
-            localStorage.setItem('active_org_id', orgs[0].id);
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Failed to check orgs", error);
-    } finally {
-      setHasCheckedOrgs(true);
-    }
-  };
-
-  // --- Render Logic ---
-
-  if (!userRole || !hasCheckedOrgs) {
+  if (isLoading) {
     return (
-      <div className="flex h-[80vh] items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-quest-blue"></div>
+      <div className="flex h-[60vh] flex-col items-center justify-center gap-3">
+        <div className="h-10 w-10 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin" />
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider animate-pulse">
+          Loading Workspace Context...
+        </p>
       </div>
     );
   }
 
-  // 🟢 3. Show the Setup Modal if they have no organisations
   if (needsOnboarding) {
     return (
-      <OrganisationSetup 
+      <OrganisationSetup
         onComplete={(newOrg) => {
-          setNeedsOnboarding(false); // Once done, clear the flag to reveal the dashboard!
-        }} 
+          if (newOrg?.id) localStorage.setItem('active_org_id', newOrg.id);
+          setNeedsOnboarding(false);
+          fetchWorkspaces();
+        }}
       />
     );
   }
 
-  // Otherwise, proceed to their normal dashboards
-  if (userRole === 'tenant') return <TenantDashboard />;
-  if (userRole === 'landlord') return <LandlordDashboard />;
-  if (userRole === 'admin') return <AdminDashboard />;
+  // 1. Business Workspace Context -> Landlord Dashboard
+  if (activeWorkspace?.workspace_type === 'business') {
+    return <LandlordDashboard workspace={activeWorkspace} />;
+  }
 
-  return null;
+  // 2. Personal Workspace Context -> Resident / Tenant Dashboard
+  if (activeWorkspace?.workspace_type === 'personal') {
+    return <TenantDashboard workspace={activeWorkspace} />;
+  }
+
+  // 3. Fallback for System Staff without workspace context
+  if (user?.is_staff || user?.is_superuser) {
+    return <AdminDashboard />;
+  }
+
+  return <TenantDashboard workspace={activeWorkspace} />;
 }

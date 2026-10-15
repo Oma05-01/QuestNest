@@ -10,7 +10,7 @@ def pay_rent(*, tenant, tenancy, amount):
     # 2. WRAP IN ATOMIC: If rules fail fatally, everything rolls back
     with transaction.atomic():
         payment = Payment.objects.create(
-            organisation=tenancy.organisation,
+            workspace=tenancy.workspace,  # 🟢 CHANGED: Replaced organisation
             user=tenant,
             tenancy=tenancy,
             amount=amount,
@@ -19,7 +19,7 @@ def pay_rent(*, tenant, tenancy, amount):
         )
 
         log_event(
-            organisation=tenancy.organisation,
+            workspace=tenancy.workspace,  # 🟢 CHANGED: Replaced organisation
             actor=tenant,
             event_type=EventType.PAYMENT_INITIATED,
             object_type="Payment",

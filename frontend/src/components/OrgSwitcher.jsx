@@ -1,44 +1,62 @@
 import { useState, useEffect, useRef } from 'react';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+
 export default function OrgSwitcher() {
   const [organisations, setOrganisations] = useState([]);
   const [activeOrg, setActiveOrg] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  
+  const [error, setError] = useState(null);
+
   const dropdownRef = useRef(null);
 
-  // --- Fetch Organisations ---
   useEffect(() => {
     const fetchOrgs = async () => {
       const token = localStorage.getItem('access_token');
-      // If user is a tenant, they might not have orgs, so we handle gracefully
       const user = JSON.parse(localStorage.getItem('user') || '{}');
+
       if (user.role === 'tenant') {
         setIsLoading(false);
-        return; 
+        return;
+      }
+
+      if (!token) {
+        setError('Not authenticated');
+        setIsLoading(false);
+        return;
       }
 
       try {
-        const response = await fetch('http://127.0.0.1:8000/api/organisations/', {
-          headers: { 'Authorization': `Bearer ${token}` }
+        const response = await fetch(`${API_BASE_URL}/api/workspaces/`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
         });
+
+        if (response.status === 401) {
+          setError('Session expired');
+          return;
+        }
 
         if (response.ok) {
           const orgs = await response.json();
           setOrganisations(orgs);
 
-          // Find the active org based on localStorage, or default to the first one
           const savedOrgId = localStorage.getItem('active_org_id');
-          const current = orgs.find(o => o.id === savedOrgId) || orgs[0];
-          
+          const current = orgs.find((o) => o.id === savedOrgId) || orgs[0];
+
           if (current) {
             setActiveOrg(current);
             localStorage.setItem('active_org_id', current.id);
           }
+        } else {
+          setError(`Error ${response.status}`);
         }
       } catch (err) {
-        console.error("Failed to load organisations", err);
+        console.error('Failed to load organisations:', err);
+        setError('Server unreachable');
       } finally {
         setIsLoading(false);
       }
@@ -47,7 +65,6 @@ export default function OrgSwitcher() {
     fetchOrgs();
   }, []);
 
-  // --- Handle Click Outside to Close ---
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -58,28 +75,25 @@ export default function OrgSwitcher() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // --- Handle Org Switch ---
   const handleSwitch = (org) => {
-    if (org.id === activeOrg.id) {
+    if (org.id === activeOrg?.id) {
       setIsOpen(false);
       return;
     }
-    
-    // Update local storage
+
     localStorage.setItem('active_org_id', org.id);
     setActiveOrg(org);
     setIsOpen(false);
-    
-    // Force a hard reload so all dashboard components refetch data for the new org
-    window.location.href = '/dashboard'; 
+    window.location.href = '/dashboard';
   };
 
-  // Don't render for tenants or if no orgs are loaded yet
-  if (isLoading || organisations.length === 0) return null;
+  if (isLoading) return <div className="p-3 text-xs text-slate-400">Loading workspaces...</div>;
+  if (error) return <div className="p-3 text-xs text-red-500">Workspace error: {error}</div>;
+  if (organisations.length === 0) return null;
 
   return (
     <div className="relative mb-6" ref={dropdownRef}>
-      <button 
+      <button
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all duration-200 ${
           isOpen ? 'bg-slate-50 border-quest-blue shadow-sm' : 'bg-white border-slate-200 hover:bg-slate-50'
@@ -96,14 +110,10 @@ export default function OrgSwitcher() {
             </p>
           </div>
         </div>
-        
-        {/* Only show dropdown arrow if they have more than 1 org */}
-        {organisations.length > 1 && (
-          <span className="text-slate-400 text-xs ml-2">▼</span>
-        )}
+
+        {organisations.length > 1 && <span className="text-slate-400 text-xs ml-2">▼</span>}
       </button>
 
-      {/* The Dropdown Menu */}
       {isOpen && organisations.length > 1 && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="p-2 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
@@ -115,19 +125,13 @@ export default function OrgSwitcher() {
                 key={org.id}
                 onClick={() => handleSwitch(org)}
                 className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between transition-colors ${
-                  org.id === activeOrg.id ? 'bg-blue-50 text-quest-blue font-bold' : 'text-slate-700 hover:bg-slate-50 font-medium'
+                  org.id === activeOrg?.id ? 'bg-blue-50 text-quest-blue font-bold' : 'text-slate-700 hover:bg-slate-50 font-medium'
                 }`}
               >
                 <span className="truncate pr-4">{org.name}</span>
-                {org.id === activeOrg.id && <span>✓</span>}
+                {org.id === activeOrg?.id && <span>✓</span>}
               </button>
             ))}
-          </div>
-          {/* Optional: Future button to create a new org */}
-          <div className="border-t border-slate-100 p-2">
-            <button className="w-full text-left px-2 py-2 text-xs font-bold text-slate-500 hover:text-quest-navy transition flex items-center gap-2">
-              <span>+</span> Create new portfolio
-            </button>
           </div>
         </div>
       )}

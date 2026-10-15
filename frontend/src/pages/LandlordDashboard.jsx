@@ -1,117 +1,90 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import LandlordTenancies from '../components/LandlordTenancies'; // 🟢 1. Import it here
+import { apiFetch } from '../api/client';
+import LandlordTenancies from '../components/LandlordTenancies';
 
-export default function LandlordDashboard() {
-  const navigate = useNavigate();
+export default function LandlordDashboard({ workspace }) {
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      const token = localStorage.getItem('access_token');
-      
-      if (!token) {
-        navigate('/login');
-        return;
-      }
-
       try {
-        const response = await fetch('http://127.0.0.1:8000/api/dashboard/landlord/', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (response.status === 401) {
-          localStorage.removeItem('access_token');
-          navigate('/login');
-          return;
-        }
-
-        if (!response.ok) throw new Error('Failed to load data');
+        const response = await apiFetch('/api/dashboard/stats/business/');
+        if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
 
         const data = await response.json();
         setStats(data);
       } catch (err) {
-        setError('Failed to load dashboard data. Please try again.');
+        setError(err.message || 'Failed to load portfolio stats.');
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, [navigate]);
+  }, [workspace?.id]);
 
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-quest-blue"></div>
+        <div className="h-10 w-10 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-xl">
+      <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl text-sm font-medium">
         {error}
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-300">
       <div>
-        <h2 className="text-2xl font-bold text-quest-navy">Portfolio Overview</h2>
-        <p className="text-slate-500">Monitor your property performance and escrow balances.</p>
+        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Portfolio Overview</h2>
+        <p className="text-slate-500 text-sm">
+          Operating Context: <span className="font-semibold text-slate-800">{workspace?.name || 'Business Workspace'}</span>
+        </p>
       </div>
 
-      {/* 📊 Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-        
-        {/* Total Revenue Card */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col hover:shadow-md transition">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-slate-500 text-sm font-semibold uppercase tracking-wider">Total Revenue</span>
-            <span className="h-8 w-8 bg-green-100 text-green-600 rounded-full flex items-center justify-center">📈</span>
+            <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Total Revenue</span>
+            <span className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl font-bold">📈</span>
           </div>
-          <span className="text-3xl font-bold text-quest-navy">
+          <span className="text-3xl font-black text-slate-900">
             ₦{Number(stats?.total_revenue || 0).toLocaleString()}
           </span>
         </div>
 
-        {/* Escrow Balance Card (QuestNest's Core Feature) */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col hover:shadow-md transition border-l-4 border-l-quest-blue">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 border-l-4 border-l-blue-600 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-slate-500 text-sm font-semibold uppercase tracking-wider">Escrow Balance</span>
-            <span className="h-8 w-8 bg-blue-100 text-quest-blue rounded-full flex items-center justify-center">🛡️</span>
+            <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Protected Escrow</span>
+            <span className="p-2.5 bg-blue-50 text-blue-600 rounded-xl font-bold">🛡️</span>
           </div>
-          <span className="text-3xl font-bold text-quest-blue">
+          <span className="text-3xl font-black text-blue-600">
             ₦{Number(stats?.escrow_balance || 0).toLocaleString()}
           </span>
         </div>
 
-        {/* Active Tenants Card */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col hover:shadow-md transition">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-slate-500 text-sm font-semibold uppercase tracking-wider">Active Tenants</span>
-            <span className="h-8 w-8 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center">🔑</span>
+            <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Active Occupancy</span>
+            <span className="p-2.5 bg-amber-50 text-amber-600 rounded-xl font-bold">🔑</span>
           </div>
-          <span className="text-3xl font-bold text-quest-navy">
+          <span className="text-3xl font-black text-slate-900">
             {stats?.active_tenants || 0}
           </span>
         </div>
       </div>
 
-      {/* 🏠 Placeholder for Landlord Tenancies Table */}
-      <div className="mt-10 bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-quest-navy">Active Tenancies</h3>
-          <button className="text-sm font-semibold text-quest-blue hover:text-quest-navy transition">
-            Manage Properties
-          </button>
+          <h3 className="text-base font-bold text-slate-900">Active Tenancies</h3>
         </div>
         <LandlordTenancies />
       </div>

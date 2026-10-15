@@ -4,7 +4,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from accounts.models import User
-from organisations.models import Organisation
+from workspaces.models import Organisation
 from wallet.models import Wallet, WalletTransaction
 from assets.models import Assets, Unit
 from rentals.models import Tenancy

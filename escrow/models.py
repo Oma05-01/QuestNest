@@ -1,4 +1,3 @@
-# escrow/models.py
 from django.db import models
 from accounts.models import User
 from django.utils import timezone
@@ -7,9 +6,7 @@ from operations.lifecycle import LifecycleMixin
 from rentals.models import Tenancy
 
 
-
 class Escrow(LifecycleMixin, models.Model):
-
     PENDING = 'pending'
     FUNDED = 'funded'
     RELEASED = 'released'
@@ -29,29 +26,20 @@ class Escrow(LifecycleMixin, models.Model):
         REFUNDED: [],
     }
 
+    # 🟢 KEPT: The human paying the money
     tenant = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name='tenant_escrows'
     )
-    landlord = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='landlord_escrows'
-    )
 
-    organisation = models.ForeignKey(
-        "organisations.Organisation",
-        on_delete=models.CASCADE,
-        related_name="organisation_escrows",
-        null=True,
-        blank=True
-    )
+    # 🟢 REMOVED 'landlord' and 'organisation' entirely!
 
     tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, null=True, blank=True)
 
+    # 🟢 KEPT: The business receiving the money
     workspace = models.ForeignKey(
-        "organisations.Workspace",
+        "workspaces.Workspace",  # Using string to avoid circular imports
         on_delete=models.CASCADE,
         related_name="escrows",
         null=True,
@@ -66,7 +54,6 @@ class Escrow(LifecycleMixin, models.Model):
         default=PENDING
     )
 
-    # New fields for rent period tracking
     start_date = models.DateField(default=timezone.now)
     end_date = models.DateField(null=True, blank=True)
 
@@ -74,27 +61,22 @@ class Escrow(LifecycleMixin, models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     metadata = models.JSONField(default=dict, blank=True)
-
     released_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"Escrow {self.id} - {self.tenancy.unit.name}"
+        # Safely handle string representation if tenancy isn't set yet
+        unit_name = self.tenancy.unit.name if self.tenancy and self.tenancy.unit else "Unknown Unit"
+        return f"Escrow {self.id} - {unit_name}"
 
     def save(self, *args, **kwargs):
-        # 🟢 CHANGED: Safely check if tenancy actually exists before accessing .unit
-        if not self.organisation_id and self.tenancy and self.tenancy.unit:
-            self.organisation = self.tenancy.unit.asset.organisation
+        # 🟢 CHANGED: Auto-assign the workspace directly from the Tenancy
+        if not self.workspace_id and self.tenancy:
+            self.workspace = self.tenancy.workspace
         super().save(*args, **kwargs)
 
     def fund(self, *, actor=None):
-        """
-        Transition escrow to FUNDED.
-
-        No financial logic here.
-        All side effects are handled by rules.
-        """
         if self.status != self.PENDING:
-            return self  # idempotent safety
+            return self
 
         return self.transition_to(
             self.FUNDED,

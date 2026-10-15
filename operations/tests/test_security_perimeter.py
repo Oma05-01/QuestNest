@@ -68,7 +68,7 @@ class TestSecurityPerimeter:
 
     def test_unverified_organisation_blocked_from_payments(self, organisation, funded_tenant, active_tenancy):
         """
-        KYC: Members of unverified organisations must be blocked from transactions.
+        KYC: Members of unverified workspaces must be blocked from transactions.
         """
         # 1. SETUP: De-verify the org
         organisation.is_verified = False

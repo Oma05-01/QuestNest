@@ -2,10 +2,9 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from accounts.models import User
 from assets.models import Unit
-from organisations.models import Organisation
+from workspaces.models import Workspace # 🟢 Updated import
 from operations.lifecycle import LifecycleMixin
 from operations.constants import EventType
-
 
 class Tenancy(LifecycleMixin, models.Model):
 
@@ -28,8 +27,9 @@ class Tenancy(LifecycleMixin, models.Model):
         COMPLETED: [],
     }
 
-    organisation = models.ForeignKey(
-        Organisation,
+    # 🟢 CHANGED: Now points to Workspace (The Landlord/Property Manager)
+    workspace = models.ForeignKey(
+        Workspace,
         on_delete=models.CASCADE,
         related_name="tenancies"
     )
@@ -42,6 +42,7 @@ class Tenancy(LifecycleMixin, models.Model):
         blank=True
     )
 
+    # 🟢 KEPT: The physical human who is renting the unit
     tenant = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -58,15 +59,12 @@ class Tenancy(LifecycleMixin, models.Model):
     )
 
     rent_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    # deposit_amount might just be rent_amount
     deposit_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     grace_period_days = models.IntegerField(default=3)
-
     rent_cycle_days = models.IntegerField(default=30, null=True, blank=True)
     next_payment_date = models.DateField(null=True, blank=True)
 
@@ -74,17 +72,19 @@ class Tenancy(LifecycleMixin, models.Model):
     late_fee_applied = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"{self.tenant.email} - {self.unit.name}"
+        return f"{self.tenant.name or self.tenant.email} - {self.unit.name}"
 
     def clean(self):
-        if self.unit.asset.organisation != self.organisation:
+        # 🟢 CHANGED: Uses the updated workspace property on Unit
+        if self.unit and self.workspace_id and self.unit.workspace != self.workspace:
             raise ValidationError(
-                "Unit does not belong to the specified organisation."
+                "Unit does not belong to the specified workspace."
             )
 
     def save(self, *args, **kwargs):
-        if not self.organisation_id and self.unit:
-            self.organisation = self.unit.asset.organisation
+        # 🟢 CHANGED: Auto-assigns the workspace if it's missing
+        if not self.workspace_id and self.unit:
+            self.workspace = self.unit.workspace
         super().save(*args, **kwargs)
 
     def activate(self, *, actor=None):

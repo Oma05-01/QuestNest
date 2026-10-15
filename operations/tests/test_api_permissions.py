@@ -28,7 +28,7 @@ class TestRolePermissions:
         Ensures a user with 'admin' role can access tenant-restricted views.
         """
         from accounts.models import User
-        from organisations.models import Membership
+        from workspaces.models import Membership
 
         admin_user = User.objects.create(email="admin@questnest.com", role='admin', is_staff=True)
         Membership.objects.create(user=admin_user, organisation=organisation, role="owner")

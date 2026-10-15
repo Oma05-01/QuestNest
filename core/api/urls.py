@@ -10,7 +10,7 @@ urlpatterns = [
     path("escrows/", include("escrow.api.urls")),
     path("notifications/", include("notifications.api.urls")),
     path("operations/", include("operations.api.urls")),
-    path("organisations/", include("organisations.api.urls")),
+    path("workspaces/", include("workspaces.api.urls")),
     path("verification/", include("verification.api.urls")),
     path("messages/", include("user_messages.api.urls")),
     path("dashboard/", include("dashboards.api.urls")),

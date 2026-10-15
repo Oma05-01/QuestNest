@@ -3,7 +3,7 @@ from accounts.models import User
 from rentals.models import Tenancy
 from escrow.models import Escrow
 from operations.lifecycle import LifecycleMixin
-from organisations.models import Organisation
+from workspaces.models import Workspace  # 🟢 Updated import
 
 
 class Payment(LifecycleMixin, models.Model):
@@ -20,36 +20,49 @@ class Payment(LifecycleMixin, models.Model):
     ]
 
     ALLOWED_TRANSITIONS = {
-        INITIATED: [PROCESSING, SUCCESS, FAILED],  # 🟢 Added SUCCESS here for instant wallet transfers
-        PROCESSING: [SUCCESS, FAILED],  # Kept for future third-party card payments
+        INITIATED: [PROCESSING, SUCCESS, FAILED],
+        PROCESSING: [SUCCESS, FAILED],
         SUCCESS: [],
         FAILED: [],
     }
 
-    organisation = models.ForeignKey(
-        Organisation,
+    # 🟢 CHANGED: Replaced organisation with workspace
+    workspace = models.ForeignKey(
+        Workspace,
         on_delete=models.CASCADE,
         related_name="payments",
+        null=True,  # Allows personal wallet top-ups
         blank=True
     )
 
     retry_count = models.IntegerField(default=0)
     last_retry_at = models.DateTimeField(null=True, blank=True)
 
+    # 🟢 KEPT: The human pulling out their credit card or wallet
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+
     tenancy = models.ForeignKey(
         Tenancy,
         on_delete=models.CASCADE,
-        related_name="payments", null=True, blank=True
+        related_name="payments",
+        null=True,
+        blank=True
     )
+
     created_at = models.DateTimeField(auto_now_add=True, blank=True, null=True, db_index=True)
-    reference = models.CharField(max_length=255, unique=True, db_index=True) # 🟢 Add db_index
+    reference = models.CharField(max_length=255, unique=True, db_index=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=INITIATED, db_index=True) # 🟢 Index common filters
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=INITIATED, db_index=True)
     metadata = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
         return f"Payment of {self.amount} by {self.user.email} | {self.reference} - {self.status}"
+
+    def save(self, *args, **kwargs):
+        # 🟢 ADDED: Automatically route rent payments to the landlord's workspace
+        if not self.workspace_id and self.tenancy:
+            self.workspace = self.tenancy.workspace
+        super().save(*args, **kwargs)
 
     def change_status(self, new_status):
         """
@@ -65,6 +78,7 @@ class Payment(LifecycleMixin, models.Model):
 
 
 class EscrowActionLog(models.Model):
+    # 🟢 KEPT AS IS: Actions are performed by human Admins on an Escrow
     escrow = models.ForeignKey(
         Escrow,
         on_delete=models.CASCADE,

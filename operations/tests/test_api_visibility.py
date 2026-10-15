@@ -2,7 +2,7 @@ import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
-from organisations.models import Organisation, Membership
+from workspaces.models import Organisation, Membership
 from accounts.models import User
 from rentals.models import Tenancy
 from decimal import Decimal

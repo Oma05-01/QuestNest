@@ -9,38 +9,39 @@ class EventRuleAdmin(admin.ModelAdmin):
     # 🟢 1. Core Display
     list_display = (
         "event_type",
-        "organisation",
+        "workspace",        # 🟢 CHANGED: organisation -> workspace
         "action_type",
         "execution_order",
         "is_active"
     )
 
-    # 🟢 2. Quick Filters (Moved is_active to the top for quick toggling)
+    # 🟢 2. Quick Filters
     list_filter = (
         "is_active",
         "event_type",
         "action_type",
-        "organisation"
+        "workspace"         # 🟢 CHANGED
     )
 
-    # 🟢 3. Search Bar (Assuming organisation has a 'name' field)
+    # 🟢 3. Search Bar
     search_fields = (
         "event_type",
         "action_type",
-        "organisation__name"
+        "workspace__name"    # 🟢 CHANGED
     )
 
-    # 🟢 4. Inline Editing (Saves you from clicking into every record!)
+    # 🟢 4. Inline Editing
     list_editable = (
         "execution_order",
         "is_active"
     )
 
-    # 🟢 5. Default Sorting (Groups by org first, then execution order)
+    # 🟢 5. Default Sorting
     ordering = (
-        "organisation",
+        "workspace",        # 🟢 CHANGED
         "execution_order"
     )
+
 
 class RuleExecutionInline(admin.TabularInline):
     model = RuleExecution
@@ -68,12 +69,14 @@ class RuleExecutionInline(admin.TabularInline):
             return obj.error_message[:100] + "..." if len(obj.error_message) > 100 else obj.error_message
         return "-"
 
+
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ['id_link', 'event_type', 'organisation', 'colored_status', 'object_link', 'created_at']
-    list_filter = ['status', 'event_type', 'created_at']
-    search_fields = ['id', 'object_id', 'organisation__name']
-    readonly_fields = ['id', 'parent_event_link', 'metadata', 'created_at', 'updated_at']
+    # 🟢 CHANGED: organisation -> workspace
+    list_display = ['id_link', 'event_type', 'workspace', 'colored_status', 'object_link', 'created_at']
+    list_filter = ['status', 'event_type', 'created_at', 'workspace'] # Added workspace filter
+    search_fields = ['id', 'object_id', 'workspace__name'] # 🟢 CHANGED
+    readonly_fields = ['id', 'workspace', 'parent_event_link', 'metadata', 'created_at', 'updated_at']
     inlines = [RuleExecutionInline]
 
     @admin.display(description="Event ID")
@@ -97,6 +100,7 @@ class EventAdmin(admin.ModelAdmin):
             url = reverse('admin:operations_event_change', args=[obj.parent_event.id])
             return format_html('<a href="{}">View Parent Event ({})</a>', url, str(obj.parent_event.id)[:8])
         return "Root Event"
+
 
 @admin.register(RuleExecution)
 class RuleExecutionAdmin(admin.ModelAdmin):

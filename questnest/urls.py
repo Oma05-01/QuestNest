@@ -16,18 +16,7 @@ urlpatterns = [
 
     path('admin/', admin.site.urls),
 
-    # Web routes
-    path("accounts/", include("accounts.urls")),
-    path("dashboards/", include("dashboards.urls")),
-    path('assets/', include('assets.urls')),
-    path('escrow/', include('escrow.urls')),
-    path('payments/', include('payments.urls')),
-    path('messages/', include('user_messages.urls')),
-    path('wallet/', include('wallet.urls')),
-    path("organisations/", include("organisations.urls")),
-    path("verification/", include("verification.urls")),
-    path("operations/", include("operations.urls")),
-    path("tenancies/", include("rentals.urls")),
+
 
 
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

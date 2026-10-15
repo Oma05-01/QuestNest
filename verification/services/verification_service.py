@@ -1,48 +1,43 @@
-from verification.models import OrganisationVerification, PropertyVerification, VerificationDocument
+from verification.models import WorkspaceVerification, AssetVerification, VerificationDocument
 from operations.constants import EventType
 from operations.services.event_service import log_event
 
-
-def submit_organisation_verification(*, organisation, document_file, submitter):
-    """Handles uploading a single document for an organisation."""
-
-    # Use get_or_create so they can re-submit if previously rejected
-    verification, created = OrganisationVerification.objects.get_or_create(
-        organisation=organisation
+def submit_workspace_verification(*, workspace, document_file, submitter):
+    # Now WorkspaceVerification is defined!
+    verification, created = WorkspaceVerification.objects.get_or_create(
+        workspace=workspace
     )
     verification.document = document_file
-    verification.verified = False  # Reset to false on new submission
+    verification.verified = False
     verification.save()
 
+    # Now log_event accepts 'workspace'!
     log_event(
-        organisation=organisation,
+        workspace=workspace,
         actor=submitter,
-        event_type="ORG_VERIFICATION_SUBMITTED",  # Add to your EventType constants
-        object_type="OrganisationVerification",
+        event_type=EventType.WORKSPACE_VERIFICATION_SUBMITTED,
+        object_type="WorkspaceVerification",
         object_id=str(verification.id)
     )
     return verification
 
-
-def submit_property_verification(*, asset, document_files, submitter):
-    """Handles uploading multiple documents for a property."""
-
-    verification, created = PropertyVerification.objects.get_or_create(
+def submit_asset_verification(*, asset, document_files, submitter):
+    # Now AssetVerification is defined!
+    verification, created = AssetVerification.objects.get_or_create(
         asset=asset
     )
     verification.verified = False
     verification.save()
 
-    # Create the individual document records and attach them
     for file in document_files:
         doc = VerificationDocument.objects.create(file=file, name=file.name)
         verification.documents.add(doc)
 
     log_event(
-        organisation=asset.organisation,
+        workspace=asset.workspace, # Pulling workspace context from the asset
         actor=submitter,
-        event_type="PROPERTY_VERIFICATION_SUBMITTED",  # Add to your EventType constants
-        object_type="PropertyVerification",
+        event_type=EventType.ASSET_VERIFICATION_SUBMITTED,
+        object_type="AssetVerification",
         object_id=str(verification.id)
     )
     return verification

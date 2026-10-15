@@ -2,7 +2,6 @@
 import os
 from celery import Celery
 
-# TODO: Change 'your_main_project_folder' to the actual name of the folder this file is in
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'questnest.settings')
 
 app = Celery('questnest')

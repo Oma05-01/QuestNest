@@ -16,13 +16,13 @@ def admin_release_escrow(*, admin_user, escrow):
         raise ValidationError("Only funded escrows can be released.")
 
     log_event(
-        organisation=escrow.organisation,
+        workspace=escrow.workspace,  # 🟢 CHANGED: Replaced organisation
         actor=admin_user,
         event_type=EventType.ESCROW_RELEASE_REQUESTED,
         object_type="Escrow",
         object_id=str(escrow.id),
         metadata={
-            "escrow_id": escrow.id
+            "escrow_id": str(escrow.id)  # 🟢 Safe string casting
         }
     )
 
@@ -38,13 +38,14 @@ def admin_refund_escrow(*, admin_user, escrow, reason=None):
         raise ValidationError("Only funded escrows can be refunded.")
 
     log_event(
-        organisation=escrow.organisation,
+        workspace=escrow.workspace,  # 🟢 CHANGED: Replaced organisation
         actor=admin_user,
         event_type=EventType.ESCROW_REFUND_REQUESTED,
         object_type="Escrow",
         object_id=str(escrow.id),
         metadata={
-            "escrow_id": escrow.id,
+            "escrow_id": str(escrow.id), # 🟢 Safe string casting
             "reason": reason
         }
     )
+

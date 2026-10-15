@@ -16,19 +16,17 @@ class EventSerializer(serializers.ModelSerializer):
         model = Event
         fields = [
             'id', 'event_type', 'object_type', 'object_id', 
-            'status', 'organisation', 'metadata', 'created_at', 'executions', 'actor_email',
+            'status', 'workspace', 'metadata', 'created_at', 'executions', 'actor_email', # 🟢 CHANGED: organisation -> workspace
         ]
 
         read_only_fields = [
             'id',
-            'organisation',
+            'workspace', # 🟢 CHANGED
             'actor',
             'event_type',
             'object_type',
             'object_id',
             'created_at'
-            # Note: We leave 'status' and 'metadata' out of read_only_fields ONLY IF
-            # you plan to build a "Retry Failed Event" endpoint later. Otherwise, add them here!
         ]
 
 
@@ -58,13 +56,13 @@ class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
-            'id', 'title', 'description', 'status', 'due_date', 
+            'id', 'title', 'description', 'status', 'due_date',
             'related_object_type', 'related_object_id', 'created_at'
         ]
 
         read_only_fields = [
             'id',
-            'organisation',
+            'workspace', # 🟢 CHANGED: organisation -> workspace
             'related_object_type',
             'related_object_id',
             'created_at'

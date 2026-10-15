@@ -18,41 +18,44 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/verify/:uid/:token" element={<VerifyEmail />} />
+          {/* Root Route: Redirects to /dashboard if logged in, /login if not */}
+          <Route
+            path="/"
+            element={
+              localStorage.getItem('access_token')
+                ? <Navigate to="/dashboard" replace />
+                : <Navigate to="/login" replace />
+            }
+          />
 
-        {/* 🛡️ The Master Protected Route */}
-        <Route 
-          path="/dashboard" 
-          element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }
-        >
-          {/* All these children automatically inherit "/dashboard" and the protection */}
-          <Route index element={<Overview />} /> 
-          <Route path="settings" element={<Settings />} /> 
-          
-          <Route path="properties" element={<Properties />} /> 
-          <Route path="properties/:id" element={<PropertyDetail />} /> 
-          
-          <Route path="leases" element={<Leases />} /> 
-          <Route path="wallet" element={<Wallet />} /> 
+          <Route path="/login" element={<Login />} />
+          <Route path="/verify/:uid/:token" element={<VerifyEmail />} />
 
-          <Route path="maintenance" element={<Maintenance />} />
+          {/* Master Protected Route */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Overview />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="properties" element={<Properties />} />
+            <Route path="properties/:id" element={<PropertyDetail />} />
+            <Route path="leases" element={<Leases />} />
+            <Route path="leases/:id" element={<LeaseViewer />} />
+            <Route path="wallet" element={<Wallet />} />
+            <Route path="maintenance" element={<Maintenance />} />
+            <Route path="messages" element={<Messages />} />
+          </Route>
 
-          <Route path="messages" element={<Messages />} />
-          
-          {/* 🟢 Corrected: Nested cleanly inside the dashboard block */}
-          <Route path="leases/:id" element={<LeaseViewer />} /> 
-        </Route>
+          <Route path="payment/success" element={<PaymentSuccess />} />
 
-        
-        <Route path="payment/success" element={<PaymentSuccess />} />
-        {/* Catch-all redirect */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+          {/* Catch-all */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
     </BrowserRouter>
   )
 }
