@@ -36,7 +36,7 @@ A context-aware, multi-tenant PropTech platform empowering seamless operational 
 ## 📊 Database Schema Overview
 The core data architecture centers on relational multi-tenancy, bridging users to workspaces securely through an active membership mapping:
 
-Plaintext
+
 ```User [1] <---> [*] Membership [*] <---> [1] Workspace```
 
 * User: Base authentication entity storing baseline credentials and verification status.
@@ -99,4 +99,4 @@ ALLOWED_HOSTS=127.0.0.1,localhost
 RESEND_API_KEY=re_your_resend_api_key_here
 ```
 
-(Tip: For local testing without an active Resend API key, you can fall back to Django's console email backend by setting EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend' in your settings).
+(Tip: For local testing without an active Resend API key, you can fall back to Django's console email backend by setting ```EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend' ``` in your settings).
