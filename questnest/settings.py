@@ -232,3 +232,18 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
     'SECURITY': [{'jwt': []}],
 }
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+
+AI_MODELS = {
+    "default": {
+        "provider": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "temperature": 0.0,
+    },
+    "triage": {
+        "provider": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "temperature": 0.1,
+    },
+}
