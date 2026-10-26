@@ -9,15 +9,17 @@ from ai.models import AIRun
 
 T = TypeVar("T", bound=PydanticBaseModel)
 
+
 def _resolve_cfg(task: str) -> dict:
     return settings.AI_MODELS.get(task, settings.AI_MODELS["default"])
+
 
 def get_model(task: str = "default"):
     cfg = _resolve_cfg(task)
     return ChatGroq(
         model=cfg["model"],
         temperature=cfg.get("temperature", 0.0),
-        groq_api_key=settings.GROQ_API_KEY,
+        api_key=settings.GROQ_API_KEY,  # 🟢 FIXED: Langchain expects api_key
         timeout=30,
         max_retries=2,
     )
@@ -35,7 +37,11 @@ def run_structured(
     Executes a structured output invocation while enforcing workspace context
     logging and performance metric persistence.
     """
-    model = get_model(task).with_structured_output(schema, include_raw=True)
+    # 🟢 REMOVED include_raw=True so it returns the schema directly or raises a clear error
+    model = get_model(task).with_structured_output(
+        schema,
+        method="json_mode"
+    )
     start_time = time.time()
 
     cfg = _resolve_cfg(task)
@@ -48,12 +54,15 @@ def run_structured(
     )
 
     try:
+        # 🟢 Result is now directly the Pydantic object (TriageResult)
         result = model.invoke(messages)
+
         latency = int((time.time() - start_time) * 1000)
 
         ai_run.latency_ms = latency
         ai_run.status = "success"
         ai_run.save()
+
         return result
 
     except Exception as e:

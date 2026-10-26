@@ -15,7 +15,7 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 # 🟢 NEW: Security variables are now dynamic
 SECRET_KEY = env('SECRET_KEY', default='unsafe-development-key-change-me')
 DEBUG = env.bool('DEBUG', default=False)
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['127.0.0.1', 'localhost'])
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['127.0.0.1', 'localhost', 'testserver'])
 
 # Application definition
 INSTALLED_APPS = [
@@ -34,7 +34,9 @@ INSTALLED_APPS = [
     'django_extensions',
     'anymail',
     'rest_framework_simplejwt.token_blacklist',
+
     # Your Apps
+    'ai',
     'accounts',
     'dashboards',
     'wallet',
@@ -233,17 +235,17 @@ SPECTACULAR_SETTINGS = {
     'SECURITY': [{'jwt': []}],
 }
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 AI_MODELS = {
     "default": {
         "provider": "groq",
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-20b",  # Active replacement for high-performance text tasks
         "temperature": 0.0,
     },
     "triage": {
         "provider": "groq",
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-20b",    # Active alternative with fast inference speeds
         "temperature": 0.1,
     },
 }
