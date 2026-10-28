@@ -33,7 +33,7 @@ export default function PropertyDetail() {
     
     try {
       // 1. Fetch Property Info
-      const propRes = await fetch(`http://127.0.0.1:8000/api/assets/${id}/`, {
+      const propRes = await fetch(`${import.meta.env.VITE_API_URL}/api/assets/${id}/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -48,7 +48,7 @@ export default function PropertyDetail() {
       setFormData({ name: propData.name, location: propData.location });
 
       // 2. Fetch Units
-      const unitRes = await fetch(`http://127.0.0.1:8000/api/assets/${id}/units/`, {
+      const unitRes = await fetch(`${import.meta.env.VITE_API_URL}/api/assets/${id}/units/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -75,7 +75,7 @@ export default function PropertyDetail() {
     const token = localStorage.getItem('access_token');
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/assets/${id}/`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/assets/${id}/`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -101,7 +101,7 @@ export default function PropertyDetail() {
     const token = localStorage.getItem('access_token');
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/assets/${id}/`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/assets/${id}/`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -122,7 +122,7 @@ export default function PropertyDetail() {
     const token = localStorage.getItem('access_token');
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/assets/${id}/units/`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/assets/${id}/units/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

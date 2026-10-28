@@ -35,7 +35,7 @@ export default function Settings() {
 
     try {
       // Send the PATCH request to your Django UserUpdateView
-      const response = await fetch('http://127.0.0.1:8000/api/auth/profile/', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/profile/`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,

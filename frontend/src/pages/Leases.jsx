@@ -13,7 +13,7 @@ export default function Leases() {
     const token = localStorage.getItem('access_token');
     
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/leases/', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/leases/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -40,7 +40,7 @@ export default function Leases() {
     const token = localStorage.getItem('access_token');
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/leases/${id}/send/`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/leases/${id}/send/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

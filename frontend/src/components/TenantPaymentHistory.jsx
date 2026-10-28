@@ -11,7 +11,7 @@ export default function TenantPaymentHistory() {
       
       try {
         // Replace with your exact URL from accounts/api/urls.py
-        const response = await fetch('http://127.0.0.1:8000/api/wallet/transactions/', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/wallet/transactions/`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

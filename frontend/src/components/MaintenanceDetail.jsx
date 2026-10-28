@@ -14,7 +14,7 @@ export default function MaintenanceDetail({ issue, isOpen, onClose, onUpdate }) 
   const fetchComments = async () => {
     if (!issue) return;
     const token = localStorage.getItem('access_token');
-    const res = await fetch(`http://127.0.0.1:8000/api/maintenance/requests/${issue.id}/comments/`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/maintenance/requests/${issue.id}/comments/`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
@@ -31,7 +31,7 @@ const handlePayout = async () => {
 
   setIsPaying(true);
   const token = localStorage.getItem('access_token');
-  const res = await fetch(`http://127.0.0.1:8000/api/maintenance/requests/${issue.id}/pay/`, {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/api/maintenance/requests/${issue.id}/pay/`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -63,7 +63,7 @@ const handlePayout = async () => {
       const token = localStorage.getItem('access_token');
       
       // Fetch Vendors for assignment
-      fetch('http://127.0.0.1:8000/api/maintenance/vendors/', {
+      fetch(`${import.meta.env.VITE_API_URL}/api/maintenance/vendors/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       .then(res => res.json())
@@ -80,7 +80,7 @@ const handlePayout = async () => {
     setIsSending(true);
 
     const token = localStorage.getItem('access_token');
-    const res = await fetch(`http://127.0.0.1:8000/api/maintenance/requests/${issue.id}/comments/`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/maintenance/requests/${issue.id}/comments/`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -99,7 +99,7 @@ const handlePayout = async () => {
   const handleAssign = async () => {
     setAssigning(true);
     const token = localStorage.getItem('access_token');
-    const res = await fetch(`http://127.0.0.1:8000/api/maintenance/requests/${issue.id}/assign/`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/maintenance/requests/${issue.id}/assign/`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,

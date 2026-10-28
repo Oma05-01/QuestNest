@@ -16,7 +16,7 @@ export default function Login() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
 
-  const API_BASE = 'http://127.0.0.1:8000/api/auth'; // Ensure this matches your Django port
+  const API_BASE = `${import.meta.env.VITE_API_URL}/api/auth`; // Ensure this matches your Django port
 
   // 1. CHECK EMAIL
   const handleEmailSubmit = async (e) => {

@@ -11,7 +11,7 @@ export default function SystemActivity() {
       
       try {
         // Adjust the URL to match your urls.py for SystemActivityView
-        const response = await fetch('http://127.0.0.1:8000/api/dashboard/activity/', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/dashboard/activity/`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

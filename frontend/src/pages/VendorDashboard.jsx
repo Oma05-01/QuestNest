@@ -6,7 +6,7 @@ export default function VendorDashboard() {
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
-    fetch('http://127.0.0.1:8000/api/maintenance/my-tasks/', {
+    fetch(`${import.meta.env.VITE_API_URL}/api/maintenance/my-tasks/`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
     .then(res => res.json())

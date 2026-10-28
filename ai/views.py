@@ -20,6 +20,7 @@ from .serializers import MaintenanceTriageRequestSerializer,LeaseDocumentUploadS
 from .services import triage_maintenance_issue
 from .tasks import process_lease_document
 from ai.agent import copilot_app
+from ai.escrow import escrow_app
 from workspaces.models import Workspace
 
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
@@ -292,3 +293,62 @@ class CopilotStreamView(APIView):
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
         return StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+
+class EscrowStartView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, tenancy_id):
+        workspace_id = request.headers.get('X-Workspace-Id')
+
+        # Security: Ensure tenancy belongs to the active workspace
+        if not Tenancy.objects.filter(id=tenancy_id, workspace_id=workspace_id).exists():
+            return Response({"error": "Tenancy not found."}, status=404)
+
+        # Deterministic thread ID based on tenancy
+        config = {"configurable": {"thread_id": f"escrow_tenancy_{tenancy_id}"}}
+
+        initial_state = {
+            "tenancy_id": tenancy_id,
+            "workspace_id": workspace_id,
+            "human_approved": False
+        }
+
+        # Run the graph until the 'human_review' interrupt
+        escrow_app.invoke(initial_state, config)
+        state = escrow_app.get_state(config)
+
+        return Response({
+            "status": "paused_for_review",
+            "recommendation": state.values.get("recommendation"),
+            "confidence_score": state.values.get("confidence_score")
+        }, status=200)
+
+class EscrowResolveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, tenancy_id):
+        workspace_id = request.headers.get('X-Workspace-Id')
+        approved = request.data.get("approved", False)
+
+        if not Tenancy.objects.filter(id=tenancy_id, workspace_id=workspace_id).exists():
+            return Response({"error": "Tenancy not found."}, status=404)
+
+        config = {"configurable": {"thread_id": f"escrow_tenancy_{tenancy_id}"}}
+
+        # Verify the graph is actually paused at the review step
+        state = escrow_app.get_state(config)
+        if not state or 'human_review' not in state.next:
+            return Response({"error": "No active escrow review found for this tenancy."}, status=400)
+
+        # Inject the human's decision into the state
+        escrow_app.update_state(config, {"human_approved": approved})
+
+        # Resume the graph by passing None as the input
+        escrow_app.invoke(None, config)
+        final_state = escrow_app.get_state(config)
+
+        return Response({
+            "status": "finalized",
+            "recommendation": final_state.values.get("recommendation"),
+            "human_approved": final_state.values.get("human_approved")
+        }, status=200)

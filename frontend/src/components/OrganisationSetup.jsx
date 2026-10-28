@@ -13,7 +13,7 @@ export default function OrganisationSetup({ onComplete }) {
     const token = localStorage.getItem('access_token');
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/organisations/', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/organisations/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

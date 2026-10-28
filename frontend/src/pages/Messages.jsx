@@ -16,7 +16,7 @@ const [availableContacts, setAvailableContacts] = useState([]); // You'll fetch 
 // 2. Add this function to handle starting a chat
 const handleStartChat = async (targetUserId) => {
   const token = localStorage.getItem('access_token');
-  const res = await fetch('http://127.0.0.1:8000/api/messages/start/', {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/api/messages/start/`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -38,7 +38,7 @@ useEffect(() => {
     const fetchContacts = async () => {
       const token = localStorage.getItem('access_token');
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/messages/contacts/', {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/messages/contacts/`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {
@@ -61,7 +61,7 @@ useEffect(() => {
       const token = localStorage.getItem('access_token');
       try {
         // Adjust this URL to match your user_messages app's inbox endpoint
-        const res = await fetch('http://127.0.0.1:8000/api/messages/inbox/', {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/messages/inbox/`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {
@@ -85,7 +85,7 @@ useEffect(() => {
       const token = localStorage.getItem('access_token');
       try {
         // Adjust this URL to match your user_messages app's detail endpoint
-        const res = await fetch(`http://127.0.0.1:8000/api/messages/${activeChat.id}/`, {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/messages/${activeChat.id}/`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {
@@ -114,7 +114,7 @@ useEffect(() => {
     const token = localStorage.getItem('access_token');
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/messages/${activeChat.id}/`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/messages/${activeChat.id}/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

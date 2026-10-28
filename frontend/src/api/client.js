@@ -7,7 +7,7 @@ export async function apiFetch(endpoint, options = {}) {
 
   const headers = {
     ...(token && { 'Authorization': `Bearer ${token}` }),
-    ...(activeWorkspaceId && { 'X-Workspace-ID': activeWorkspaceId }),
+    ...(activeWorkspaceId && { 'X-Workspace-Id': activeWorkspaceId }),
     ...options.headers,
   };
 
@@ -16,7 +16,10 @@ export async function apiFetch(endpoint, options = {}) {
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  // Ensure endpoint starts with a leading slash
+  const formattedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
+  const response = await fetch(`${API_BASE_URL}${formattedEndpoint}`, {
     ...options,
     headers,
   });
