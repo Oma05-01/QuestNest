@@ -1,6 +1,8 @@
 # ai/models.py
 from django.db import models
 from core.models import BaseModel
+from pgvector.django import VectorField
+from rentals.models import Tenancy
 from workspaces.models import Workspace
 
 
@@ -24,3 +26,21 @@ class AIRun(BaseModel):
 
     def __str__(self):
         return f"{self.task} ({self.model_name}) - WS #{self.workspace_id}"
+
+
+class LeaseDocument(models.Model):
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE)
+    tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE)
+    file = models.FileField(upload_to='leases/%Y/%m/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, default="pending")  # pending, processing, completed
+
+
+class LeaseChunk(models.Model):
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE)
+    document = models.ForeignKey(LeaseDocument, on_delete=models.CASCADE, related_name='chunks')
+    content = models.TextField()
+
+    # 384 or 1536 depending on your chosen embedding model
+    embedding = VectorField(dimensions=384)
+    chunk_index = models.IntegerField()

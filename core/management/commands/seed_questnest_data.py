@@ -51,17 +51,21 @@ class Command(BaseCommand):
             Membership.objects.all().delete()
             Workspace.objects.all().delete()
             User.objects.filter(is_superuser=False).delete()
+            # Note: Add LeaseChunk and LeaseDocument deletes here if you want them cleared too
             self.stdout.write(self.style.SUCCESS("Database cleaned successfully.\n"))
 
         self.stdout.write(self.style.MIGRATE_HEADING(f"Seeding {num_workspaces} Workspaces..."))
 
         MAINTENANCE_ISSUES = [
-            ("Water leak in bathroom", "Active water leaking under the sink, causing dampness on cabinet floor.", "high"),
+            ("Water leak in bathroom", "Active water leaking under the sink, causing dampness on cabinet floor.",
+             "high"),
             ("Electrical panel tripping", "Circuit breaker keeps tripping whenever the AC is turned on.", "high"),
             ("AC blowing warm air", "Air conditioner unit blowing warm air in the living room.", "medium"),
             ("Door lock mechanism jammed", "Front entrance door lock is loose and hard to latch.", "urgent"),
             ("Low water pressure", "Shower in primary bathroom has very low water pressure.", "medium"),
             ("Kitchen light flickering", "Main kitchen fixture lights flicker continuously.", "low"),
+            ("Peeling ceiling paint", "Paint is peeling off the ceiling in the guest bedroom due to humidity.", "low"),
+            ("Clogged gutter", "Rainwater is overflowing from the front roof gutters.", "medium"),
         ]
 
         for w_idx in range(num_workspaces):
@@ -73,9 +77,10 @@ class Command(BaseCommand):
                 is_verified=True,
             )
 
-            # 2. Landlord / Owner User
+            # 2. Landlord / Owner User (Guarantees landlord_1, landlord_2, landlord_3 are created)
+            landlord_email = f"landlord_{w_idx + 1}@example.com"
             landlord = User.objects.create_user(
-                email=f"landlord_{w_idx + 1}@example.com",
+                email=landlord_email,
                 password="Password123!",
                 name=fake.name(),
             )
@@ -100,11 +105,19 @@ class Command(BaseCommand):
                 phone=fake.phone_number()[:20],
                 email=fake.email(),
             )
+            hvac = Vendor.objects.create(
+                workspace=workspace,
+                name=f"{fake.last_name()} Heating & Cooling",
+                category="HVAC",  # Assuming free-text or a choice you have configured
+                phone=fake.phone_number()[:20],
+                email=fake.email(),
+            )
 
-            self.stdout.write(self.style.SUCCESS(f"▶ Created Workspace #{workspace.id}: '{workspace.name}' (Owner: {landlord.email})"))
+            self.stdout.write(self.style.SUCCESS(
+                f"▶ Created Workspace #{workspace.id}: '{workspace.name}' (Owner: {landlord.email})"))
 
-            # 4. Assets & Units
-            for _ in range(random.randint(2, 3)):
+            # 4. Assets & Units (Increased density)
+            for _ in range(random.randint(3, 5)):
                 asset = Assets.objects.create(
                     workspace=workspace,
                     name=f"{fake.city()} Apartments",
@@ -112,8 +125,8 @@ class Command(BaseCommand):
                     status=Assets.OCCUPIED,
                 )
 
-                for u_idx in range(1, random.randint(3, 5)):
-                    monthly_rent = Decimal(random.randint(150000, 600000))
+                for u_idx in range(1, random.randint(4, 7)):
+                    monthly_rent = Decimal(random.randint(150000, 750000))
                     unit = Unit.objects.create(
                         asset=asset,
                         name=f"Unit {100 + u_idx}",
@@ -133,10 +146,12 @@ class Command(BaseCommand):
                         role=Membership.MEMBER,
                     )
 
-                    # 6. Tenancy Record
-                    start_date = timezone.now().date() - timedelta(days=random.randint(30, 180))
+                    # 6. Tenancy Record (Past & Active Variation)
+                    start_date = timezone.now().date() - timedelta(days=random.randint(30, 300))
                     end_date = start_date + timedelta(days=365)
                     deposit = monthly_rent * Decimal("1.5")
+
+                    is_active = random.choice([True, True, False])  # Lean towards active
 
                     tenancy = Tenancy.objects.create(
                         workspace=workspace,
@@ -146,7 +161,7 @@ class Command(BaseCommand):
                         end_date=end_date,
                         rent_amount=monthly_rent,
                         deposit_amount=deposit,
-                        status=Tenancy.ACTIVE,
+                        status=Tenancy.ACTIVE if is_active else "TERMINATED",  # Adjust to match your model's choices
                     )
 
                     # 7. Lease Agreement
@@ -157,41 +172,59 @@ class Command(BaseCommand):
                         deposit_amount=deposit,
                         start_date=start_date,
                         end_date=end_date,
-                        status=LeaseAgreement.ACTIVE,
+                        status=LeaseAgreement.ACTIVE if is_active else "EXPIRED",
                     )
 
                     # 8. Maintenance Request
-                    if random.choice([True, False]):
+                    if random.choice([True, False, True]):  # Higher chance to have issues
                         title, desc, priority = random.choice(MAINTENANCE_ISSUES)
+                        # Fixed the string formatting issue here
+                        req_title = f"{title} - {unit.name}"
+
                         req = MaintenanceRequest.objects.create(
                             workspace=workspace,
                             unit=unit,
                             tenant=tenant,
-                            title=f"{title} - {unit.name}",
+                            title=req_title,
                             description=desc,
                             priority=priority,
-                            status=random.choice([MaintenanceRequest.OPEN, MaintenanceRequest.IN_PROGRESS]),
+                            status=random.choice([
+                                MaintenanceRequest.OPEN,
+                                MaintenanceRequest.IN_PROGRESS,
+                                "RESOLVED"
+                            ]),
                             estimated_cost=Decimal(random.randint(10000, 50000)),
                         )
 
-                        if req.status == MaintenanceRequest.IN_PROGRESS:
-                            v = plumber if "Water" in title or "pressure" in title else electrician
+                        if req.status in [MaintenanceRequest.IN_PROGRESS, "RESOLVED"]:
+                            # Smart dispatch based on keywords
+                            if "Water" in title or "pressure" in title:
+                                v = plumber
+                            elif "Electrical" in title or "light" in title:
+                                v = electrician
+                            elif "AC" in title:
+                                v = hvac
+                            else:
+                                v = random.choice([plumber, electrician, hvac])
+
                             MaintenanceAssignment.objects.create(
                                 request=req,
                                 vendor=v,
                                 cost=req.estimated_cost,
-                                notes="Dispatched via automated schedule.",
+                                notes="Assigned via automated system.",
                             )
 
-                    # 9. Payments
-                    for m in range(2):
+                    # 9. Payments (Varying statuses)
+                    for m in range(random.randint(2, 6)):
                         Payment.objects.create(
                             workspace=workspace,
                             user=tenant,
                             tenancy=tenancy,
                             reference=f"PAY-{uuid.uuid4().hex[:10].upper()}",
                             amount=lease.rent_amount,
-                            status=Payment.SUCCESS,
+                            status=random.choice(
+                                [Payment.SUCCESS, Payment.SUCCESS, Payment.SUCCESS, "FAILED", "PENDING"]),
                         )
 
-        self.stdout.write(self.style.SUCCESS("\nSuccessfully seeded QuestNest database with clean multi-tenant data!"))
+        self.stdout.write(self.style.SUCCESS(
+            f"\nSuccessfully seeded QuestNest database with {num_workspaces} workspaces and rich dummy data!"))

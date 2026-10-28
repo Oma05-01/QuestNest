@@ -1,3 +1,4 @@
+# workspaces/middleware.py
 import logging
 from django.http import JsonResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication

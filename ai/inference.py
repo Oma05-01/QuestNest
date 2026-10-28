@@ -3,7 +3,7 @@ import time
 from typing import Type, TypeVar
 from pydantic import BaseModel as PydanticBaseModel
 
-from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from django.conf import settings
 from ai.models import AIRun
 
@@ -16,10 +16,11 @@ def _resolve_cfg(task: str) -> dict:
 
 def get_model(task: str = "default"):
     cfg = _resolve_cfg(task)
-    return ChatGroq(
+    return ChatOpenAI(
         model=cfg["model"],
         temperature=cfg.get("temperature", 0.0),
-        api_key=settings.GROQ_API_KEY,  # 🟢 FIXED: Langchain expects api_key
+        api_key=settings.GROQ_API_KEY,  # Pass your Groq key here
+        base_url="https://api.groq.com/openai/v1",  # Route traffic to Groq
         timeout=30,
         max_retries=2,
     )
@@ -37,7 +38,6 @@ def run_structured(
     Executes a structured output invocation while enforcing workspace context
     logging and performance metric persistence.
     """
-    # 🟢 REMOVED include_raw=True so it returns the schema directly or raises a clear error
     model = get_model(task).with_structured_output(
         schema,
         method="json_mode"
@@ -54,7 +54,6 @@ def run_structured(
     )
 
     try:
-        # 🟢 Result is now directly the Pydantic object (TriageResult)
         result = model.invoke(messages)
 
         latency = int((time.time() - start_time) * 1000)

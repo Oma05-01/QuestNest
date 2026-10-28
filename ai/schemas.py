@@ -21,3 +21,10 @@ class TriageResult(BaseModel):
     requires_emergency_dispatch: bool = Field(
         description="True if the issue poses immediate risk to safety or major structural loss (e.g. active main pipe burst, exposed high-voltage wiring)."
     )
+    is_landlord_responsible: bool = Field(
+        description="True if the landlord is responsible for this repair based on the lease, False if the tenant is responsible.")
+
+    responsibility_reasoning: str = Field(
+        description="A brief explanation citing the lease context to justify who is responsible.")
+
+    severity: str = Field(description="Explanation of the severity and potential damage.")
